@@ -1,0 +1,625 @@
+/**
+ * Askar Family Prayer Tracker - Core Application Logic
+ * Version: 2.5 (Final Architecture Fix)
+ */
+
+const CONFIG = {
+    members: ['Abdulla', 'Dana', 'Mohammed', 'Iman', 'Rahma', 'Ghofra'],
+    passwords: {
+        'Abdulla': 'abdulla123',
+        'Dana': 'dana123',
+        'Mohammed': 'mohammed123',
+        'Iman': 'iman123',
+        'Rahma': 'rahma123',
+        'Ghofra': 'ghofra123'
+    },
+    prayers: ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'],
+    storageKey: 'askar_v2_prayer_data',
+    settingsKey: 'askar_v2_settings_data',
+    quranSlides: [
+        { text: "مَا سَلَكَكُمْ فِي سَقَرَ ۝ قَالُوا لَمْ نَكُ مِنَ الْمُصَلِّينَ", source: "سورة المدثر 42–43" },
+        { text: "وَالَّذِينَ هُمْ عَلَى صَلَواتِهِمْ يُحَافِظُونَ ۝ أُولَئِكَ هُمُ الْوَارِثُونَ ۝ الَّذِينَ يَرِثُونَ الْفِرْدَوْسَ هُمْ فِيهَا خَالِدُونَ", source: "سورة المؤمنون 9–11" },
+        { text: "وَتُوبُوا إِلَى اللَّهِ جَمِيعًا أَيُّهَ الْمُؤْمِنُونَ لَعَلَّكُمْ تُفْلِحُونَ", source: "سورة النور 31" }
+    ]
+};
+
+const appState = {
+    language: "en",
+    settings: {
+        city: "Istanbul",
+        country: "Turkey",
+        method: "13",
+        darkMode: false,
+        animations: true,
+        celebrations: true
+    },
+    prayerTimes: null,
+    prayerTimeSource: "loading",
+    nextPrayer: null,
+    records: {},
+    currentPage: 'dashboard',
+    currentDate: '',
+    countdownInterval: null,
+    quranInterval: null,
+    clockInterval: null,
+    quranIndex: 0,
+    charts: { overall: null, comparison: null, overallH: null, barH: null },
+    historyFilters: { start: '', end: '', member: 'all', prayer: 'all', status: 'all', search: '', view: 'timeline' },
+    pendingAction: null
+};
+
+// --- App Initialization ---
+document.addEventListener("DOMContentLoaded", () => {
+    initApp().catch(error => {
+        console.error("App initialization failed:", error);
+        forceRenderFallbackDashboard();
+    });
+});
+
+async function initApp() {
+    console.log("INIT START");
+
+    loadSettings();
+    loadRecords();
+    applyDirection();
+    applyTranslations();
+
+    appState.currentDate = getFormattedDate(new Date());
+    initHistoryFilters();
+    setupTheme();
+    
+    // UI independent of API
+    renderQuranBanner();
+    startQuranCarousel();
+    startSidebarClock();
+    renderDashboardLoadingState();
+
+    // Data Load
+    await loadPrayerTimesSafe();
+    
+    // Initial State Calculation
+    calculateNextPrayer();
+    
+    // Routing Setup
+    setupNavigation();
+    
+    const savedPage = window.location.hash.replace("#", "") || localStorage.getItem("askarFamilyCurrentPage") || "dashboard";
+    navigateTo(savedPage);
+
+    // Intervals
+    startNextPrayerCountdown();
+    setInterval(checkDayReset, 60000);
+
+    attachEventListeners();
+
+    console.log("INIT DONE");
+}
+
+function setupNavigation() {
+    const navItems = document.querySelectorAll("[data-page]");
+    navItems.forEach(item => {
+        item.addEventListener("click", (e) => {
+            e.preventDefault();
+            const page = item.dataset.page;
+            navigateTo(page);
+        });
+    });
+
+    window.addEventListener("hashchange", () => {
+        const page = window.location.hash.replace("#", "") || "dashboard";
+        if (appState.currentPage !== page) navigateTo(page);
+    });
+}
+
+function navigateTo(page) {
+    console.log("Navigating to:", page);
+    appState.currentPage = page;
+    localStorage.setItem("askarFamilyCurrentPage", page);
+    
+    // Update URL Hash
+    if (window.location.hash !== "#" + page) {
+        window.location.hash = page;
+    }
+
+    updateActiveNav(page);
+    renderPage(page);
+}
+
+function updateActiveNav(page) {
+    document.querySelectorAll("[data-page]").forEach(item => {
+        item.classList.toggle("active", item.dataset.page === page);
+    });
+}
+
+function renderPage(page) {
+    // Hide all pages
+    document.querySelectorAll(".view-container").forEach(view => {
+        view.classList.remove("active");
+        view.style.display = "none";
+    });
+
+    // Show target page
+    const target = document.getElementById(`view-${page}`);
+    if (target) {
+        target.classList.add("active");
+        target.style.display = "block";
+        console.log("Rendering page:", page);
+    } else {
+        console.error("Missing view container for page:", page);
+        if (page !== 'dashboard') navigateTo('dashboard');
+        return;
+    }
+
+    // Page-specific triggers
+    switch (page) {
+        case "dashboard": renderDashboard(); break;
+        case "family": renderFamily(); break;
+        case "history": renderHistory(); break;
+        case "statistics": renderStats(); break;
+        case "settings": renderSettings(); break;
+    }
+}
+
+function applyDirection() {
+    document.documentElement.lang = appState.language;
+    document.documentElement.dir = appState.language === "ar" ? "rtl" : "ltr";
+}
+
+function forceRenderFallbackDashboard() {
+    appState.prayerTimes = getFallbackPrayerTimes();
+    appState.prayerTimeSource = "fallback";
+    renderPage("dashboard");
+}
+
+// --- Persistence ---
+function loadSettings() {
+    try {
+        const saved = localStorage.getItem(CONFIG.settingsKey);
+        if (saved) appState.settings = { ...appState.settings, ...JSON.parse(saved) };
+        appState.language = localStorage.getItem('askarFamilyLanguage') || 'en';
+    } catch (e) { console.error("Settings parse error", e); }
+}
+
+function loadRecords() {
+    try {
+        const saved = localStorage.getItem(CONFIG.storageKey);
+        if (saved) appState.records = JSON.parse(saved);
+    } catch (e) { appState.records = {}; }
+}
+
+function saveToStorage() {
+    localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records));
+    localStorage.setItem(CONFIG.settingsKey, JSON.stringify(appState.settings));
+}
+
+function setupTheme() {
+    document.body.classList.toggle('dark-mode', appState.settings.darkMode);
+    document.body.classList.toggle('light-mode', !appState.settings.darkMode);
+}
+
+// --- Utilities ---
+function getFormattedDate(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+function cleanTime(value) {
+    if (!value || typeof value !== "string") return null;
+    const match = value.match(/\b\d{1,2}:\d{2}\b/);
+    if (!match) return null;
+    const [h, m] = match[0].split(":");
+    return String(h).padStart(2, "0") + ":" + m;
+}
+
+function normalizePrayerTimes(timings) {
+    if (!timings) return null;
+    const res = { Fajr: cleanTime(timings.Fajr), Sunrise: cleanTime(timings.Sunrise), Dhuhr: cleanTime(timings.Dhuhr), Asr: cleanTime(timings.Asr), Maghrib: cleanTime(timings.Maghrib), Isha: cleanTime(timings.Isha) };
+    if (Object.values(res).some(v => !v)) return null;
+    return res;
+}
+
+function getFallbackPrayerTimes() {
+    return { Fajr: "03:24", Sunrise: "05:24", Dhuhr: "13:10", Asr: "17:10", Maghrib: "20:45", Isha: "22:36" };
+}
+
+async function loadPrayerTimesSafe() {
+    try {
+        const city = appState.settings.city || "Istanbul";
+        const country = appState.settings.country || "Turkey";
+        const method = appState.settings.method || "13";
+        const url = `https://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&method=${method}`;
+        
+        console.log("Fetching prayer times:", url);
+        const ctrl = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), 6500);
+        const resp = await fetch(url, { signal: ctrl.signal });
+        clearTimeout(timeout);
+
+        if (!resp.ok) throw new Error("API status not ok");
+        const data = await resp.json();
+        const norm = normalizePrayerTimes(data?.data?.timings);
+        if (!norm) throw new Error("Normalization failed");
+        
+        appState.prayerTimes = norm;
+        appState.prayerTimeSource = "api";
+    } catch (e) {
+        console.warn("Prayer time loading failed, using fallback:", e);
+        appState.prayerTimes = getFallbackPrayerTimes();
+        appState.prayerTimeSource = "fallback";
+    }
+}
+
+// --- Clock ---
+function startSidebarClock() {
+    if (appState.clockInterval) clearInterval(appState.clockInterval);
+    const update = () => {
+        const now = new Date();
+        const tEl = document.getElementById('desktop-time'), dEl = document.getElementById('desktop-date'), mEl = document.getElementById('mobile-time'), hEl = document.getElementById('mobile-hijri');
+        if (tEl) tEl.textContent = now.toLocaleTimeString([], { hour12: false });
+        if (dEl) dEl.textContent = now.toLocaleDateString(appState.language, { weekday: 'long', day: 'numeric', month: 'long' });
+        if (mEl) mEl.textContent = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+        if (hEl) {
+            try { hEl.textContent = new Intl.DateTimeFormat(appState.language + '-u-ca-islamic-uma-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' }).format(now); } catch (e) { hEl.textContent = ""; }
+        }
+    };
+    update(); appState.clockInterval = setInterval(update, 1000);
+}
+
+// --- Quran ---
+function renderQuranBanner() {
+    const tEl = document.getElementById('quran-text'), sEl = document.getElementById('quran-source'), dots = document.getElementById('carousel-dots');
+    if (!tEl || !sEl) return;
+    const slide = CONFIG.quranSlides[appState.quranIndex];
+    tEl.textContent = slide.text; sEl.textContent = slide.source; tEl.style.direction = "rtl";
+    if (dots) {
+        dots.innerHTML = ''; CONFIG.quranSlides.forEach((_, i) => {
+            const dot = document.createElement('div'); dot.className = `dot ${i === appState.quranIndex ? 'active' : ''}`;
+            dot.onclick = () => { appState.quranIndex = i; renderQuranBanner(); }; dots.appendChild(dot);
+        });
+    }
+}
+
+function startQuranCarousel() {
+    if (appState.quranInterval) clearInterval(appState.quranInterval);
+    appState.quranInterval = setInterval(() => {
+        appState.quranIndex = (appState.quranIndex + 1) % CONFIG.quranSlides.length;
+        const cont = document.querySelector('.quran-banner-content');
+        if (cont) { cont.style.opacity = 0; setTimeout(() => { renderQuranBanner(); cont.style.opacity = 1; }, 500); }
+    }, 9000);
+}
+
+// --- Dashboard ---
+function renderDashboardLoadingState() {
+    const n = document.getElementById('next-prayer-name'); if (n) n.textContent = t('dashboard.loadingPrayerTimes');
+}
+
+function timeToDate(time, addDays = 0) {
+    const [h, m] = time.split(":").map(Number);
+    const d = new Date(); d.setDate(d.getDate() + addDays); d.setHours(h, m, 0, 0); return d;
+}
+
+function calculateNextPrayer() {
+    const times = appState.prayerTimes; const now = new Date();
+    const list = [{ key: "fajr", time: times.Fajr }, { key: "dhuhr", time: times.Dhuhr }, { key: "asr", time: times.Asr }, { key: "maghrib", time: times.Maghrib }, { key: "isha", time: times.Isha }];
+    for (const p of list) { const dt = timeToDate(p.time); if (dt > now) { appState.nextPrayer = { ...p, dateTime: dt }; return; } }
+    appState.nextPrayer = { key: "fajr", time: times.Fajr, dateTime: timeToDate(times.Fajr, 1) };
+}
+
+function startNextPrayerCountdown() {
+    if (appState.countdownInterval) clearInterval(appState.countdownInterval);
+    const upd = () => {
+        if (!appState.nextPrayer) calculateNextPrayer();
+        const ms = appState.nextPrayer.dateTime - new Date();
+        if (ms <= 0) { calculateNextPrayer(); renderDashboard(); return; }
+        const c = document.getElementById('next-prayer-countdown');
+        if (c) {
+            const sec = Math.floor(ms / 1000), hh = String(Math.floor(sec / 3600)).padStart(2, "0"), mm = String(Math.floor((sec % 3600) / 60)).padStart(2, "0"), ss = String(sec % 60).padStart(2, "0");
+            c.textContent = `${hh}:${mm}:${ss}`;
+        }
+    };
+    upd(); appState.countdownInterval = setInterval(upd, 1000);
+}
+
+function renderDashboard() {
+    if (!appState.prayerTimes) return;
+    const n = document.getElementById('next-prayer-name'), r = document.getElementById('next-prayer-range');
+    if (n) n.textContent = t(`prayer.${appState.nextPrayer.key}`);
+    const fb = appState.prayerTimeSource === 'fallback' ? `<br><span class="badge badge-warning" style="font-size:0.6rem; margin-top:0.5rem;">${t('dashboard.usingFallbackTimes')}</span>` : '';
+    if (r) r.innerHTML = `<span>${t('dashboard.startsAt')} ${appState.nextPrayer.time}</span>${fb}`;
+    
+    renderPrayerWindows();
+    renderFamilyProgress();
+}
+
+function renderPrayerWindows() {
+    const c = document.getElementById('daily-timeline'); if (!c || !appState.prayerTimes) return; c.innerHTML = '';
+    const tms = appState.prayerTimes, now = new Date(), nm = now.getHours() * 60 + now.getMinutes();
+    const wins = [{ key: "fajr", start: tms.Fajr, end: tms.Sunrise }, { key: "dhuhr", start: tms.Dhuhr, end: tms.Asr }, { key: "asr", start: tms.Asr, end: tms.Maghrib }, { key: "maghrib", start: tms.Maghrib, end: tms.Isha }, { key: "isha", start: tms.Isha, end: tms.Fajr }];
+    wins.forEach(w => {
+        const [sh, sm] = w.start.split(':').map(Number), [eh, em] = w.end.split(':').map(Number);
+        let sMin = sh * 60 + sm, eMin = eh * 60 + em; if (w.key === 'isha' && eMin < sMin) eMin += 1440;
+        let cMin = nm + ((w.key === 'isha' && nm < sMin) ? 1440 : 0);
+        let sk = 'upcoming', bc = 'badge-info';
+        if (cMin >= sMin && cMin < eMin) { sk = 'active'; bc = 'badge-success'; }
+        else if (cMin >= eMin) {
+            sk = 'missed', bc = 'badge-danger';
+            let d = 0; CONFIG.members.forEach(m => { if (appState.records[appState.currentDate]?.[m]?.[w.key.charAt(0).toUpperCase() + w.key.slice(1)]) d++; });
+            if (d === CONFIG.members.length) { sk = 'completed'; bc = 'badge-gold'; }
+        }
+        const i = document.createElement('div'); i.className = `timeline-item ${sk === 'active' ? 'active' : ''} graphical-timeline-card`;
+        i.innerHTML = `<div class="tl-header"><span class="t-name">${t('prayer.' + w.key)}</span><span class="badge ${bc} tl-badge">${t('status.' + sk)}</span></div><div class="tl-times"><div class="tl-time-box"><span class="tl-time-label">${t('dashboard.start')}</span><span class="t-time">${w.start}</span></div><div class="tl-time-box"><span class="tl-time-label">${t('dashboard.end')}</span><span class="t-time">${w.end}</span></div></div>`;
+        c.appendChild(i);
+    });
+}
+
+function renderFamilyProgress() {
+    const recs = appState.records[appState.currentDate] || {};
+    let done = 0, onTime = 0, late = 0, total = CONFIG.members.length * 5;
+    CONFIG.members.forEach(m => { const mr = recs[m] || {}; Object.values(mr).forEach(r => { done++; if (r.status === 'On time') onTime++; else if (r.status === 'Late') late++; }); });
+    const pct = Math.round((done / total) * 100) || 0;
+    const pctEl = document.getElementById('family-percentage'); if (pctEl) pctEl.textContent = `${pct}%`;
+    const doneEl = document.getElementById('family-done-count'); if (doneEl) doneEl.textContent = done;
+    const stats = document.querySelector('.summary-stats');
+    if (done === 0) stats.innerHTML = `<div style="padding: 1rem; color: var(--text-muted); width: 100%; text-align: center;">${t('dashboard.noPrayersMarked')}</div>`;
+    else stats.innerHTML = `<div class="stat-item"><span class="stat-val text-success">${onTime}</span><span class="stat-label">${t('dashboard.onTime')}</span></div><div class="stat-item"><span class="stat-val text-danger">${late}</span><span class="stat-label">${t('dashboard.late')}</span></div><div class="stat-item"><span class="stat-val text-warning">${total - done}</span><span class="stat-label">${t('dashboard.pending')}</span></div>`;
+    const circ = document.getElementById('family-progress-circle'); if (circ) { const len = 2 * Math.PI * 52; circ.style.strokeDashoffset = len - (pct / 100) * len; }
+}
+
+// --- Page Rendering ---
+function renderFamily() {
+    const c = document.getElementById('family-members-grid'); if (!c) return; c.innerHTML = '';
+    CONFIG.members.forEach(m => {
+        const s = getMemberStats(m, appState.currentDate);
+        const card = document.createElement('div'); card.className = 'card member-card'; card.onclick = () => openMemberModal(m);
+        card.innerHTML = `<div class="member-card-header"><div><h3 class="member-name">${m}</h3><div class="streak-badge"><i class="fas fa-fire"></i> ${getMemberStreak(m)} ${t('family.streak')}</div></div><div class="member-progress-mini"><svg width="65" height="65"><circle stroke="var(--border-color)" stroke-width="4" fill="transparent" r="28" cx="32" cy="32"/><circle stroke="var(--primary-color)" stroke-width="4" fill="transparent" r="28" cx="32" cy="32" stroke-dasharray="175.9" stroke-dashoffset="${175.9 - (175.9 * s.percentage / 100)}"/></svg><span class="progress-text-mini">${s.percentage}%</span></div></div><div class="member-stats-row"><div class="stat-item"><span class="stat-val">${s.done}/5</span><span class="stat-label">${t('family.done')}</span></div><div class="stat-item"><span class="stat-val">${s.onTime}</span><span class="stat-label">${t('family.onTime')}</span></div><div class="stat-item"><span class="stat-val">${s.late}</span><span class="stat-label">${t('family.late')}</span></div></div><div class="member-card-footer"><span class="badge ${s.badgeClass}">${t('family.' + s.statusKey)}</span><i class="fas fa-chevron-right text-muted"></i></div>`;
+        c.appendChild(card);
+    });
+}
+
+function getMemberStats(m, d) {
+    const r = (appState.records[d] || {})[m] || {}; const dn = Object.keys(r).length, ot = Object.values(r).filter(x => x.status === 'On time').length, lt = Object.values(r).filter(x => x.status === 'Late').length, pct = Math.round((dn / 5) * 100);
+    let sk = "notStarted", bc = "badge-danger"; if (dn === 5) { sk = (ot === 5) ? "perfectDay" : "completed"; bc = (ot === 5) ? "badge-gold" : "badge-success"; } else if (dn > 0) { sk = "inProgress"; bc = "badge-info"; }
+    return { done: dn, onTime: ot, late: lt, percentage: pct, statusKey: sk, badgeClass: bc };
+}
+
+function getMemberStreak(m) {
+    let s = 0, cd = new Date(); while (true) { const ds = getFormattedDate(cd), st = getMemberStats(m, ds); if (st.done === 5) s++; else if (ds !== appState.currentDate) break; cd.setDate(cd.getDate() - 1); if (s > 365) break; } return s;
+}
+
+function initHistoryFilters() {
+    const today = appState.currentDate || getFormattedDate(new Date()); appState.historyFilters.start = today; appState.historyFilters.end = today;
+    const s = document.getElementById('history-date-start'), e = document.getElementById('history-date-end'); if (s) s.value = today; if (e) e.value = today;
+    const sel = document.getElementById('history-filter-member'); if (sel && sel.options.length <= 1) CONFIG.members.forEach(m => { const o = document.createElement('option'); o.value = m; o.textContent = m; sel.appendChild(o); });
+}
+
+function getFilteredHistory() {
+    let res = []; const f = appState.historyFilters;
+    Object.keys(appState.records).forEach(d => { if (d >= f.start && d <= f.end) Object.keys(appState.records[d]).forEach(m => { if (f.member === 'all' || f.member === m) Object.keys(appState.records[d][m]).forEach(p => { if (f.prayer === 'all' || f.prayer === p) { const r = appState.records[d][m][p]; if (f.status === 'all' || f.status === r.status) if (!f.search || m.toLowerCase().includes(f.search.toLowerCase()) || (r.note && r.note.toLowerCase().includes(f.search.toLowerCase()))) res.push({ date: d, member: m, prayer: p, ...r }); } }); }); });
+    return res.sort((a, b) => b.timestamp - a.timestamp);
+}
+
+function renderHistory() {
+    const f = getFilteredHistory(); const tot = f.length, ot = f.filter(r => r.status === 'On time').length, lt = f.filter(r => r.status === 'Late').length, mi = f.filter(r => r.status === 'Missed').length;
+    ['hist-stat-total', 'hist-stat-ontime', 'hist-stat-late', 'hist-stat-missed'].forEach((id, idx) => { const el = document.getElementById(id); if (el) el.textContent = [tot, ot, lt, mi][idx]; });
+    const dg = document.querySelector('.history-dashboard-grid'), hm = document.querySelector('.heatmap-card'), rs = document.querySelector('.records-section'), es = document.getElementById('history-empty-state');
+    if (f.length === 0) { [dg, hm, rs].forEach(x => x && x.classList.add('hidden')); if (es) es.classList.remove('hidden'); return; }
+    if (es) es.classList.add('hidden'); [dg, hm, rs].forEach(x => x && x.classList.remove('hidden'));
+    renderHistoryCharts(f); renderHistoryMemberSummary(f); renderHistoryHeatmap(); renderHistoryTable(f);
+}
+
+function renderHistoryCharts(recs) {
+    const cnts = { 'On time': 0, 'Late': 0, 'Missed': 0 }; recs.forEach(r => { if(cnts[r.status] !== undefined) cnts[r.status]++; });
+    const donut = document.getElementById('hist-status-donut');
+    if (donut) { if (appState.charts.overallH) appState.charts.overallH.destroy(); appState.charts.overallH = new Chart(donut, { type: 'doughnut', data: { labels: [t('status.onTime'), t('status.late'), t('status.missed')], datasets: [{ data: [cnts['On time'], cnts['Late'], cnts['Missed']], backgroundColor: ['#2e7d32', '#fbc02d', '#d32f2f'], borderWidth: 0 }] }, options: { cutout: '65%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } } }, maintainAspectRatio: false } }); }
+    const bar = document.getElementById('hist-prayer-bar');
+    if (bar) {
+        const perf = {}; CONFIG.prayers.forEach(p => perf[p] = { ot: 0, lm: 0 }); recs.forEach(r => { if(perf[r.prayer]) { if (r.status === 'On time') perf[r.prayer].ot++; else perf[r.prayer].lm++; } });
+        if (appState.charts.barH) appState.charts.barH.destroy(); appState.charts.barH = new Chart(bar, { type: 'bar', data: { labels: CONFIG.prayers.map(p => t('prayer.' + p.toLowerCase())), datasets: [{ label: t('status.onTime'), data: CONFIG.prayers.map(p => perf[p].ot), backgroundColor: '#2e7d32', borderRadius: 4 }, { label: t('status.late') + '/' + t('status.missed'), data: CONFIG.prayers.map(p => perf[p].lm), backgroundColor: '#d32f2f', borderRadius: 4 }] }, options: { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } } }, maintainAspectRatio: false } });
+    }
+}
+
+function renderHistoryMemberSummary(recs) {
+    const c = document.getElementById('hist-member-summary-list'); if (!c) return; c.innerHTML = '';
+    (appState.historyFilters.member === 'all' ? CONFIG.members : [appState.historyFilters.member]).forEach(m => {
+        const mr = recs.filter(r => r.member === m), tot = mr.length; if (tot === 0) return;
+        const ot = mr.filter(r => r.status === 'On time').length, lt = mr.filter(r => r.status === 'Late').length, mi = mr.filter(r => r.status === 'Missed').length;
+        const otp = Math.round((ot / tot) * 100), ltp = Math.round((lt / tot) * 100), mip = Math.round((mi / tot) * 100);
+        const r = document.createElement('div'); r.className = 'mini-member-row';
+        r.innerHTML = `<div class="mini-member-header"><span>${m}</span><span>${otp}% ${t('status.onTime')}</span></div><div class="mini-progress-track"><div class="mini-progress-fill success" style="width: ${otp}%"></div><div class="mini-progress-fill warning" style="width: ${ltp}%"></div><div class="mini-progress-fill danger" style="width: ${mip}%"></div></div>`;
+        c.appendChild(r);
+    });
+}
+
+function renderHistoryHeatmap() {
+    const c = document.getElementById('calendar-heatmap'); if (!c) return; c.innerHTML = '';
+    const focus = appState.historyFilters.start || appState.currentDate; if (!focus) return;
+    const [y, m] = focus.split('-').map(Number), dt = new Date(y, m - 1, 1), lbl = document.getElementById('heatmap-month-label');
+    if (lbl) lbl.textContent = dt.toLocaleDateString(appState.language, { month: 'long', year: 'numeric' });
+    const dim = new Date(y, m, 0).getDate(), fdi = new Date(y, m - 1, 1).getDay();
+    for (let i = 0; i < fdi; i++) c.appendChild(document.createElement('div'));
+    for (let d = 1; d <= dim; d++) {
+        const dk = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`, div = document.createElement('div'); div.className = 'cal-day empty'; div.textContent = d;
+        const data = appState.records[dk];
+        if (data) {
+            let dn = 0, ot = 0, exp = 0; CONFIG.members.forEach(mbr => { if (appState.historyFilters.member === 'all' || appState.historyFilters.member === mbr) { if (data[mbr]) { exp += 5; Object.values(data[mbr]).forEach(r => { dn++; if (r.status === 'On time') ot++; }); } } });
+            if (exp > 0) { const pct = dn / exp, otp = dn > 0 ? ot / dn : 0; if (pct >= 0.8 && otp >= 0.8) div.className = 'cal-day good'; else if (pct >= 0.5) div.className = 'cal-day partial'; else div.className = 'cal-day weak'; div.innerHTML += `<div class="tooltip">${dn}/${exp} ${t('modals.prayersText')}<br>${ot} ${t('status.onTime')}</div>`; }
+            else div.innerHTML += `<div class="tooltip">${t('history.noData')}</div>`;
+        } else div.innerHTML += `<div class="tooltip">${t('history.noData')}</div>`;
+        div.onclick = () => { appState.historyFilters.start = dk; appState.historyFilters.end = dk; const si = document.getElementById('history-date-start'), ei = document.getElementById('history-date-end'); if (si) si.value = dk; if (ei) ei.value = dk; renderHistory(); };
+        c.appendChild(div);
+    }
+}
+
+function renderHistoryTable(recs) {
+    const db = document.getElementById('history-table-body'), mc = document.getElementById('history-mobile-cards'); if (!db || !mc) return; db.innerHTML = ''; mc.innerHTML = '';
+    recs.forEach(r => {
+        const tr = document.createElement('tr'); tr.innerHTML = `<td>${r.date.split('-').slice(1).reverse().join('/')}</td><td><strong>${r.member}</strong></td><td>${t('prayer.' + r.prayer.toLowerCase())}</td><td>${r.time}</td><td><span class="badge ${getStatusBadgeClass(r.status)}">${t('status.' + (r.status === 'On time' ? 'onTime' : r.status.toLowerCase()))}</span></td>`;
+        db.appendChild(tr);
+        const cd = document.createElement('div'); cd.className = 'mobile-record-card';
+        cd.innerHTML = `<div class="m-rec-info"><span class="m-rec-title">${t('prayer.' + r.prayer.toLowerCase())} &middot; ${r.member}</span><span class="m-rec-meta"><i class="far fa-calendar-alt"></i> ${r.date} &nbsp; <i class="far fa-clock"></i> ${r.time}</span></div><div class="m-rec-status"><span class="badge ${getStatusBadgeClass(r.status)}">${t('status.' + (r.status === 'On time' ? 'onTime' : r.status.toLowerCase()))}</span></div>`;
+        mc.appendChild(cd);
+    });
+}
+
+function getStatusBadgeClass(status) { if (status === 'On time') return 'badge-success'; if (status === 'Late') return 'badge-danger'; if (status === 'Missed') return 'badge-danger'; return 'badge-info'; }
+
+function renderStats() {
+    const f = getFilteredHistory(), cnts = { 'On time': 0, 'Late': 0, 'Missed': 0 }; f.forEach(r => { if(cnts[r.status] !== undefined) cnts[r.status]++; });
+    const ov = document.getElementById('chart-overall-donut');
+    if (ov) { if (appState.charts.overall) appState.charts.overall.destroy(); appState.charts.overall = new Chart(ov, { type: 'doughnut', data: { labels: [t('status.onTime'), t('status.late'), t('status.missed')], datasets: [{ data: [statusCounts['On time'], statusCounts['Late'], statusCounts['Missed']], backgroundColor: ['#2e7d32', '#d32f2f', '#90a4ae'], borderWidth: 0 }] }, options: { cutout: '70%', plugins: { legend: { position: 'bottom' } } } }); }
+    const cmp = document.getElementById('chart-member-comparison');
+    if (cmp) {
+        const p = {}; CONFIG.members.forEach(m => p[m] = { d: 0, ot: 0 }); f.forEach(r => { p[r.member].d++; if (r.status === 'On time') p[r.member].ot++; });
+        if (appState.charts.comparison) appState.charts.comparison.destroy(); appState.charts.comparison = new Chart(cmp, { type: 'bar', data: { labels: CONFIG.members, datasets: [{ label: t('status.onTime'), data: CONFIG.members.map(m => p[m].ot), backgroundColor: '#d4af37' }, { label: t('family.completed'), data: CONFIG.members.map(m => p[m].d), backgroundColor: '#1b4332' }] }, options: { scales: { y: { beginAtZero: true } }, plugins: { legend: { position: 'bottom' } } } });
+    }
+    const c = document.getElementById('stats-insights'); if (!c) return; c.innerHTML = ''; const i = [];
+    if (f.length > 0) {
+        const pm = {}; f.forEach(r => { if (r.status !== 'On time') pm[r.prayer] = (pm[r.prayer] || 0) + 1; }); const wp = Object.entries(pm).sort((a,b) => b[1] - a[1])[0];
+        if (wp) i.push(`${t('messages.mostMissed')} <strong>${t('prayer.' + wp[0].toLowerCase())}</strong>.`);
+        const bm = CONFIG.members.map(m => { const mr = f.filter(r => r.member === m), ot = mr.filter(r => r.status === 'On time').length; return { name: m, rate: mr.length > 0 ? (ot / mr.length) : 0 }; }).sort((a,b) => b.rate - a.rate)[0];
+        if (bm && bm.rate > 0) i.push(`<strong>${bm.name}</strong> ${t('messages.highestRate')}`);
+    }
+    i.forEach(txt => { const d = document.createElement('div'); d.className = 'card insight-card'; d.innerHTML = `<p>${txt}</p>`; c.appendChild(d); });
+}
+
+function renderSettings() {
+    const s = appState.settings;
+    ['setting-city', 'setting-country', 'setting-method', 'setting-dark-mode', 'setting-animations', 'setting-celebrations'].forEach(id => { const el = document.getElementById(id); if (el) { if (el.type === 'checkbox') el.checked = s[id.split('-').pop()]; else el.value = s[id.split('-').pop()]; } });
+    const bl = document.getElementById('badge-lang'), bc = document.getElementById('badge-city'), ln = { 'en': 'English', 'tr': 'Türkçe', 'ar': 'العربية' };
+    if (bl) bl.textContent = ln[appState.language]; if (bc) bc.textContent = s.city;
+}
+
+// --- Modals ---
+function openMemberModal(m) {
+    const n = document.getElementById('modal-member-name'); if (n) n.textContent = m;
+    const st = getMemberStats(m, appState.currentDate);
+    const b = document.getElementById('modal-progress-bar'), tEl = document.getElementById('modal-progress-text'), sk = document.getElementById('modal-member-streak');
+    if (b) b.style.width = `${st.percentage}%`; if (tEl) tEl.textContent = `${st.done}/5 ${t('modals.completedText')}`; if (sk) sk.innerHTML = `<i class="fas fa-fire"></i> ${getMemberStreak(m)} ${t('family.streak')}`;
+    renderMemberChecklist(m); document.getElementById('member-modal').classList.add('active');
+}
+
+function renderMemberChecklist(m) {
+    const c = document.getElementById('member-prayer-list'); if (!c) return; c.innerHTML = '';
+    const recs = (appState.records[appState.currentDate] || {})[m] || {}, now = new Date(), nm = now.getHours() * 60 + now.getMinutes();
+    CONFIG.prayers.forEach(p => {
+        const r = recs[p], pt = appState.prayerTimes[p], [ph, pm] = pt.split(':').map(Number), pmIn = ph * 60 + pm;
+        let h = ''; 
+        if (r) {
+            h = `
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem;">
+                    <span class="badge ${getStatusBadgeClass(r.status)}">${t('status.' + (r.status === 'On time' ? 'onTime' : r.status.toLowerCase()))} &middot; ${r.time}</span>
+                    <button class="btn btn-ghost btn-sm" onclick="undoPrayer('${m}', '${p}')" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;">
+                        <i class="fas fa-undo"></i> ${t('family.undo')}
+                    </button>
+                </div>
+            `;
+        }
+        else if (nm < pmIn) h = `<button class="btn btn-ghost text-muted" disabled>${t('modals.upcoming')}</button>`;
+        else h = `<button class="btn btn-primary btn-sm" onclick="startPrayerMarking('${m}', '${p}')">${t('modals.markDone')}</button>`;
+        const div = document.createElement('div'); div.className = `prayer-row ${r ? 'completed' : ''}`;
+        div.innerHTML = `<div class="prayer-meta"><span class="p-name">${t('prayer.' + p.toLowerCase())}</span><span class="p-window">${t('modals.startsAt')} ${pt}</span></div><div class="prayer-action">${h}</div>`;
+        c.appendChild(div);
+    });
+}
+
+function startPrayerMarking(m, p) {
+    appState.pendingAction = { m, p }; const prm = document.getElementById('password-prompt-text'); if (prm) prm.textContent = `${t('modals.enterPass')} ${m}`;
+    const inp = document.getElementById('member-password-input'); if (inp) inp.value = ''; document.getElementById('password-modal').classList.add('active');
+}
+
+function verifyPassword() {
+    if (!appState.pendingAction) return; const i = document.getElementById('member-password-input');
+    if (i.value === CONFIG.passwords[appState.pendingAction.m]) { document.getElementById('password-modal').classList.remove('active'); markPrayer(appState.pendingAction.m, appState.pendingAction.p); appState.pendingAction = null; }
+    else showToast(t('messages.incorrectPass'), "danger");
+}
+
+function markPrayer(m, p) {
+    const now = new Date(), nm = now.getHours() * 60 + now.getMinutes(), pt = appState.prayerTimes[p];
+    let em = 1440; const ni = CONFIG.prayers.indexOf(p) + 1; if (ni < CONFIG.prayers.length) { const [nh, nmm] = appState.prayerTimes[CONFIG.prayers[ni]].split(':').map(Number); em = nh * 60 + nmm; }
+    const s = nm <= em ? 'On time' : 'Late';
+    if (!appState.records[appState.currentDate]) appState.records[appState.currentDate] = {}; if (!appState.records[appState.currentDate][m]) appState.records[appState.currentDate][m] = {};
+    appState.records[appState.currentDate][m][p] = { status: s, time: now.toLocaleTimeString([], { hour12: false }), timestamp: now.getTime() };
+    saveToStorage(); showToast(`${m} ${t('messages.marked')} ${t('prayer.' + p.toLowerCase())} ${t('status.' + (s === 'On time' ? 'onTime' : s.toLowerCase()))}!`);
+    if (appState.settings.celebrations && getMemberStats(m, appState.currentDate).onTime === 5) triggerConfetti();
+    refreshUI(m);
+}
+
+function undoPrayer(m, p) {
+    if (appState.records[appState.currentDate]?.[m]?.[p]) {
+        delete appState.records[appState.currentDate][m][p];
+        saveToStorage();
+        showToast(`${t('family.undo')}: ${t('prayer.' + p.toLowerCase())}`);
+        refreshUI(m);
+    }
+}
+
+function refreshUI(m) {
+    // 1. Update all pages in background
+    renderDashboard();
+    renderFamily();
+    renderHistory();
+    renderStats();
+
+    // 2. Update modal if open
+    const modal = document.getElementById('member-modal');
+    if (modal && modal.classList.contains('active')) {
+        const st = getMemberStats(m, appState.currentDate);
+        const bar = document.getElementById('modal-progress-bar'), tEl = document.getElementById('modal-progress-text'), sk = document.getElementById('modal-member-streak');
+        if (bar) bar.style.width = `${st.percentage}%`;
+        if (tEl) tEl.textContent = `${st.done}/5 ${t('modals.completedText')}`;
+        if (sk) sk.innerHTML = `<i class="fas fa-fire"></i> ${getMemberStreak(m)} ${t('family.streak')}`;
+        renderMemberChecklist(m);
+    }
+}
+
+function renderAll() {
+    renderDashboard(); renderFamily(); renderHistory(); renderStats(); renderSettings();
+}
+
+function attachEventListeners() {
+    document.querySelectorAll('.nav-btn').forEach(b => b.onclick = () => switchView(b.dataset.view));
+    document.querySelectorAll('.close-modal').forEach(b => b.onclick = () => document.querySelectorAll('.modal').forEach(m => m.classList.remove('active')));
+    const cf = document.getElementById('confirm-password-btn'); if (cf) cf.onclick = verifyPassword;
+    const pi = document.getElementById('member-password-input'); if (pi) pi.onkeyup = (e) => { if(e.key === 'Enter') verifyPassword(); };
+    const sb = document.getElementById('save-settings-btn');
+    if (sb) sb.onclick = async () => {
+        const c = document.getElementById('setting-city').value.trim(), cn = document.getElementById('setting-country').value.trim();
+        if (!c) { showToast(t('settings.emptyCity'), "danger"); return; } if (!cn) { showToast(t('settings.emptyCountry'), "danger"); return; }
+        appState.settings.city = c; appState.settings.country = cn; appState.settings.method = document.getElementById('setting-method').value;
+        saveToStorage(); sb.disabled = true; await loadPrayerTimesSafe(); sb.disabled = false; showToast(t('messages.settingsSaved')); calculateNextPrayer(); renderAll();
+    };
+    ['setting-dark-mode', 'setting-animations', 'setting-celebrations'].forEach(id => { const el = document.getElementById(id); if (el) el.onchange = (e) => { appState.settings[id.split('-').pop()] = e.target.checked; if (id === 'setting-dark-mode') setupTheme(); saveToStorage(); }; });
+    ['history-date-start', 'history-date-end', 'history-filter-member', 'history-filter-prayer', 'history-filter-status'].forEach(id => { const el = document.getElementById(id); if (el) el.onchange = (e) => { appState.historyFilters[id.split('-').pop()] = e.target.value; renderHistory(); }; });
+    const hs = document.getElementById('history-search'); if (hs) hs.oninput = (e) => { appState.historyFilters.search = e.target.value; renderHistory(); };
+    const rH = document.getElementById('history-reset-btn'), rE = document.getElementById('history-reset-empty-btn');
+    const rf = () => { initHistoryFilters(); appState.historyFilters.member = 'all'; appState.historyFilters.prayer = 'all'; appState.historyFilters.status = 'all'; appState.historyFilters.search = ''; ['history-filter-member', 'history-filter-prayer', 'history-filter-status', 'history-search'].forEach(id => { const el = document.getElementById(id); if (el) el.value = (id === 'history-search' ? '' : 'all'); }); renderHistory(); };
+    if (rH) rH.onclick = rf; if (rE) rE.onclick = rf;
+    document.querySelectorAll('.switcher-btn').forEach(b => b.onclick = () => { document.querySelectorAll('.switcher-btn').forEach(x => x.classList.remove('active')); b.classList.add('active'); appState.historyFilters.view = b.dataset.historyView; renderHistory(); });
+    document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => {
+        document.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('active')); b.classList.add('active');
+        const td = new Date(); let st = new Date(); switch(b.dataset.range) { case 'week': st.setDate(td.getDate() - 7); break; case 'month': st.setMonth(td.getMonth() - 1); break; case 'all': start = new Date(2000, 0, 1); break; }
+        appState.historyFilters.start = getFormattedDate(st); appState.historyFilters.end = getFormattedDate(td); renderStats();
+    });
+    const expJ = document.getElementById('btn-export-json'), ec = document.getElementById('btn-export-csv'), ij = document.getElementById('import-json'), ra = document.getElementById('btn-reset-all');
+    if (ej) ej.onclick = exportJSON; if (ec) ec.onclick = exportCSV; if (ij) ij.onchange = importJSON; if (ra) ra.onclick = () => { if (confirm(t('settings.areYouSure') + '\n\n' + t('messages.resetWarn'))) { appState.records = {}; saveToStorage(); renderAll(); showToast(t('messages.resetDone')); } };
+}
+
+function showToast(m, tp = 'info') { const c = document.getElementById('toast-container'); if (!c) return; const t = document.createElement('div'); t.className = `toast ${tp}`; t.textContent = m; c.appendChild(t); setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 500); }, 3000); }
+function triggerConfetti() { if (typeof confetti === 'function') confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#1b4332', '#d4af37', '#2d6a4f'] }); }
+
+function checkDayReset() {
+    const today = getFormattedDate(new Date());
+    if (appState.currentDate !== today) { appState.currentDate = today; loadPrayerTimesSafe().then(() => { renderAll(); showToast(t('messages.dayRefreshed')); }); }
+}
+
+window.addEventListener('languageChanged', () => {
+    applyTranslations();
+    startSidebarClock(); // Update date locale
+    renderAll();
+});
+
+function exportJSON() { const data = JSON.stringify(appState.records, null, 2); const blob = new Blob([data], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `askar_prayer_backup_${appState.currentDate}.json`; a.click(); }
+function exportCSV() { const filtered = getFilteredHistory(); let csv = 'Date,Member,Prayer,Status,Time\n'; filtered.forEach(r => { csv += `${r.date},${r.member},${r.prayer},${r.status},${r.time}\n`; }); const blob = new Blob([csv], { type: 'text/csv' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `askar_prayer_history_${appState.currentDate}.csv`; a.click(); }
+function importJSON(e) { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (event) => { try { const imported = JSON.parse(event.target.result); appState.records = { ...appState.records, ...imported }; saveToStorage(); renderAll(); showToast(t('messages.restored')); } catch (err) { showToast(t('messages.invalidBackup'), "danger"); } }; reader.readAsText(file); }
