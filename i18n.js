@@ -17,16 +17,21 @@ const translations = {
             completionRate: "Completion Rate",
             noPrayersMarked: "No prayers marked yet today",
             loadingPrayerTimes: "Loading prayer times...",
-            usingFallbackTimes: "Using fallback prayer times"
+            usingFallbackTimes: "Using fallback prayer times",
+            currentTime: "Current Time",
+            today: "Today",
+            tomorrow: "Tomorrow",
+            prayerSource: "Prayer Source"
         },
         prayer: {
             fajr: "Fajr", dhuhr: "Dhuhr", asr: "Asr", maghrib: "Maghrib", isha: "Isha"
         },
         status: {
-            upcoming: "Upcoming", active: "Active", completed: "Completed", missed: "Missed", pending: "Pending", onTime: "On time", late: "Late", loading: "Loading"
+            upcoming: "Upcoming", active: "Active", completed: "Completed", missed: "Missed", pending: "Pending", onTime: "On time", late: "Late", loading: "Loading", fallback: "Using fallback prayer times"
         },
         family: {
             title: "Family Members",
+            subtitle: "Track individual progress and streaks",
             markAsPrayed: "Mark as Prayed",
             prayerDetails: "Prayer Details",
             streak: "Streak",
@@ -39,8 +44,7 @@ const translations = {
             cancel: "Cancel",
             undo: "Undo",
             edit: "Edit",
-            done: "Done",
-            marked: "Marked"
+            done: "Done"
         },
         history: {
             title: "Prayer History",
@@ -60,22 +64,49 @@ const translations = {
             timeline: "Timeline",
             calendar: "Calendar",
             noRecords: "No prayer history found for this filter",
-            to: "to"
+            to: "to",
+            noData: "No Data",
+            statusDist: "Status Distribution",
+            prayerPerf: "Prayer Performance",
+            memberSummary: "Member Summary",
+            consistencyHeatmap: "Family Consistency Heatmap",
+            good: "Good",
+            partial: "Partial",
+            weak: "Weak",
+            detailedRecords: "Detailed Records",
+            date: "Date",
+            time: "Time"
         },
         stats: {
             title: "Statistics & Insights",
+            subtitle: "Visual prayer consistency overview",
             today: "Today",
             thisWeek: "This Week",
             thisMonth: "This Month",
             allTime: "All Time",
+            overallPerf: "Overall Performance",
+            memberComp: "Member Comparison",
+            overallPerformance: "Overall Performance",
+            memberComparison: "Member Comparison",
+            prayerPerformance: "Prayer Performance",
+            progressTrend: "Progress Trend",
             completionRate: "Completion Rate",
             onTimePercentage: "On-time Percentage",
-            bestStreak: "Best Streak",
-            mostConsistentMember: "Most Consistent Member",
+            onTimeRate: "On-time Rate",
+            totalCompleted: "Total Completed",
+            totalMissed: "Total Missed",
+            totalLate: "Total Late",
+            noData: "No data yet",
+            noDataDescription: "Start marking prayers to see statistics here.",
+            bestMember: "Best Member",
+            bestPrayer: "Best Prayer",
             mostMissedPrayer: "Most Missed Prayer",
-            prayerPerformance: "Prayer Performance",
-            memberPerformance: "Member Performance",
-            progressTrend: "Progress Trend"
+            familyAverage: "Family Average",
+            onTime: "On Time",
+            late: "Late",
+            missed: "Missed",
+            pending: "Pending",
+            completed: "Completed"
         },
         settings: {
             title: "Settings",
@@ -104,7 +135,8 @@ const translations = {
             confirm: "Confirm",
             locHelper: "Used to calculate daily prayer times.",
             emptyCity: "Please enter a city.",
-            emptyCountry: "Please enter a country."
+            emptyCountry: "Please enter a country.",
+            fallbackWarning: "Using fallback prayer times"
         },
         modals: {
             verify: "Verify Identity",
@@ -149,16 +181,21 @@ const translations = {
             completionRate: "Tamamlanma Oranı",
             noPrayersMarked: "Bugün henüz namaz işaretlenmedi",
             loadingPrayerTimes: "Namaz vakitleri yükleniyor...",
-            usingFallbackTimes: "Yedek namaz vakitleri kullanılıyor"
+            usingFallbackTimes: "Yedek namaz vakitleri kullanılıyor",
+            currentTime: "Şu Anki Saat",
+            today: "Bugün",
+            tomorrow: "Yarın",
+            prayerSource: "Namaz Vakti Kaynağı"
         },
         prayer: {
             fajr: "Sabah", dhuhr: "Öğle", asr: "İkindi", maghrib: "Akşam", isha: "Yatsı"
         },
         status: {
-            upcoming: "Yaklaşan", active: "Aktif", completed: "Tamamlandı", missed: "Kaçırıldı", pending: "Beklemede", onTime: "Vaktinde", late: "Geç", loading: "Yükleniyor"
+            upcoming: "Yaklaşan", active: "Aktif", completed: "Tamamlandı", missed: "Kaçırıldı", pending: "Beklemede", onTime: "Vaktinde", late: "Geç", loading: "Yükleniyor", fallback: "Yedek namaz vakitleri kullanılıyor"
         },
         family: {
             title: "Aile Üyeleri",
+            subtitle: "Bireysel ilerlemeyi ve serileri takip edin",
             markAsPrayed: "Kılındı İşaretle",
             prayerDetails: "Namaz Detayları",
             streak: "Seri",
@@ -171,8 +208,7 @@ const translations = {
             cancel: "İptal",
             undo: "Geri Al",
             edit: "Düzenle",
-            done: "Yapıldı",
-            marked: "İşaretlendi"
+            done: "Yapıldı"
         },
         history: {
             title: "Namaz Geçmişi",
@@ -193,22 +229,48 @@ const translations = {
             calendar: "Takvim",
             noRecords: "Bu filtre için kayıt bulunamadı",
             to: "-",
-            noData: "Veri Yok"
+            noData: "Veri Yok",
+            statusDist: "Durum Dağılımı",
+            prayerPerf: "Namaz Performansı",
+            memberSummary: "Üye Özeti",
+            consistencyHeatmap: "Aile Tutarlılık Haritası",
+            good: "İyi",
+            partial: "Kısmi",
+            weak: "Zayıf",
+            detailedRecords: "Detaylı Kayıtlar",
+            date: "Tarih",
+            time: "Zaman"
         },
         stats: {
-            title: "İstatistikler",
+            title: "İstatistikler ve İçgörüler",
+            subtitle: "Görsel namaz düzeni özeti",
             today: "Bugün",
             thisWeek: "Bu Hafta",
             thisMonth: "Bu Ay",
             allTime: "Tüm Zamanlar",
+            overallPerf: "Genel Performans",
+            memberComp: "Üye Karşılaştırması",
+            overallPerformance: "Genel Performans",
+            memberComparison: "Üye Karşılaştırması",
+            prayerPerformance: "Namaz Performansı",
+            progressTrend: "İlerleme Eğilimi",
             completionRate: "Tamamlanma Oranı",
             onTimePercentage: "Vaktinde Oranı",
-            bestStreak: "En İyi Seri",
-            mostConsistentMember: "En İstikrarlı Üye",
+            onTimeRate: "Vaktinde Kılma Oranı",
+            totalCompleted: "Toplam Tamamlanan",
+            totalMissed: "Toplam Kaçırılan",
+            totalLate: "Toplam Geç",
+            noData: "Henüz veri yok",
+            noDataDescription: "İstatistikleri görmek için namazları işaretlemeye başlayın.",
+            bestMember: "En İyi Üye",
+            bestPrayer: "En İyi Namaz",
             mostMissedPrayer: "En Çok Kaçırılan Namaz",
-            prayerPerformance: "Namaz Performansı",
-            memberPerformance: "Üye Performansı",
-            progressTrend: "İlerleme Trendi"
+            familyAverage: "Aile Ortalaması",
+            onTime: "Vaktinde",
+            late: "Geç",
+            missed: "Kaçırıldı",
+            pending: "Beklemede",
+            completed: "Tamamlandı"
         },
         settings: {
             title: "Ayarlar",
@@ -237,7 +299,8 @@ const translations = {
             confirm: "Onayla",
             locHelper: "Günlük namaz vakitlerini hesaplamak için kullanılır.",
             emptyCity: "Lütfen şehir girin.",
-            emptyCountry: "Lütfen ülke girin."
+            emptyCountry: "Lütfen ülke girin.",
+            fallbackWarning: "Yedek namaz vakitleri kullanılıyor"
         },
         modals: {
             verify: "Kimliği Doğrula",
@@ -282,16 +345,21 @@ const translations = {
             completionRate: "نسبة الإنجاز",
             noPrayersMarked: "لم يتم تسجيل أي صلاة اليوم بعد",
             loadingPrayerTimes: "جاري تحميل أوقات الصلاة...",
-            usingFallbackTimes: "يتم استخدام أوقات صلاة احتياطية"
+            usingFallbackTimes: "يتم استخدام أوقات صلاة احتياطية",
+            currentTime: "الوقت الحالي",
+            today: "اليوم",
+            tomorrow: "غداً",
+            prayerSource: "مصدر أوقات الصلاة"
         },
         prayer: {
             fajr: "الفجر", dhuhr: "الظهر", asr: "العصر", maghrib: "المغرب", isha: "العشاء"
         },
         status: {
-            upcoming: "قادمة", active: "نشطة", completed: "مكتملة", missed: "فائتة", pending: "قيد الانتظار", onTime: "في الوقت", late: "متأخرة", loading: "جاري التحميل"
+            upcoming: "قادمة", active: "نشطة", completed: "مكتملة", missed: "فائتة", pending: "قيد الانتظار", onTime: "في الوقت", late: "متأخرة", loading: "جاري التحميل", fallback: "يتم استخدام أوقات صلاة احتياطية"
         },
         family: {
             title: "أفراد العائلة",
+            subtitle: "تتبع تقدم الأفراد والمواظبة",
             markAsPrayed: "تحديد كمصلى",
             prayerDetails: "تفاصيل الصلاة",
             streak: "المواظبة",
@@ -304,8 +372,7 @@ const translations = {
             cancel: "إلغاء",
             undo: "تراجع",
             edit: "تعديل",
-            done: "تمت",
-            marked: "تم التسجيل"
+            done: "تمت"
         },
         history: {
             title: "سجل الصلوات",
@@ -324,24 +391,50 @@ const translations = {
             table: "الجدول",
             timeline: "الجدول الزمني",
             calendar: "التقويم",
-            noRecords: "لم يتم العور على سجلات صلاة",
+            noRecords: "لم يتم العثور على سجلات صلاة لهذه الفلاتر",
             to: "إلى",
-            noData: "لا بيانات"
+            noData: "لا بيانات",
+            statusDist: "توزيع الحالات",
+            prayerPerf: "أداء الصلوات",
+            memberSummary: "ملخص الأفراد",
+            consistencyHeatmap: "خريطة المواظبة",
+            good: "جيد",
+            partial: "جزئي",
+            weak: "ضعيف",
+            detailedRecords: "سجلات مفصلة",
+            date: "التاريخ",
+            time: "الوقت"
         },
         stats: {
             title: "الإحصائيات والرؤى",
+            subtitle: "نظرة مرئية على الالتزام بالصلاة",
             today: "اليوم",
             thisWeek: "هذا الأسبوع",
             thisMonth: "هذا الشهر",
             allTime: "كل الوقت",
+            overallPerf: "الأداء العام",
+            memberComp: "مقارنة الأفراد",
+            overallPerformance: "الأداء العام",
+            memberComparison: "مقارنة الأفراد",
+            prayerPerformance: "أداء الصلوات",
+            progressTrend: "اتجاه التقدم",
             completionRate: "نسبة الإنجاز",
             onTimePercentage: "نسبة الصلاة في الوقت",
-            bestStreak: "أفضل مواظبة",
-            mostConsistentMember: "العضو الأكثر التزاماً",
+            onTimeRate: "نسبة الصلاة في الوقت",
+            totalCompleted: "إجمالي المكتمل",
+            totalMissed: "إجمالي الفائت",
+            totalLate: "إجمالي المتأخر",
+            noData: "لا توجد بيانات بعد",
+            noDataDescription: "ابدأ بتسجيل الصلوات لعرض الإحصائيات هنا.",
+            bestMember: "أفضل فرد",
+            bestPrayer: "أفضل صلاة",
             mostMissedPrayer: "أكثر صلاة فائتة",
-            prayerPerformance: "أداء الصلوات",
-            memberPerformance: "أداء الأعضاء",
-            progressTrend: "اتجاه التقدم"
+            familyAverage: "متوسط العائلة",
+            onTime: "في الوقت",
+            late: "متأخرة",
+            missed: "فائتة",
+            pending: "قيد الانتظار",
+            completed: "مكتملة"
         },
         settings: {
             title: "الإعدادات",
@@ -370,7 +463,8 @@ const translations = {
             confirm: "تأكيد",
             locHelper: "يُستخدم لحساب أوقات الصلاة اليومية.",
             emptyCity: "يرجى إدخال المدينة.",
-            emptyCountry: "يرجى إدخال البلد."
+            emptyCountry: "يرجى إدخال البلد.",
+            fallbackWarning: "يتم استخدام أوقات صلاة احتياطية"
         },
         modals: {
             verify: "التحقق من الهوية",
@@ -405,25 +499,37 @@ function getSavedLanguage() {
 
 let currentLanguage = getSavedLanguage();
 
+function humanizeKey(key) {
+    return key
+        .split(".")
+        .pop()
+        .replace(/([A-Z])/g, " $1")
+        .replace(/^./, c => c.toUpperCase());
+}
+
 function t(key) {
     const lang = currentLanguage || "en";
     const keys = key.split('.');
     let val = translations[lang];
+    
     for (let k of keys) {
         if (val) val = val[k];
         else break;
     }
+    
     if (val === undefined || typeof val !== 'string') {
+        // Fallback to English
         val = translations['en'];
         for (let k of keys) {
             if (val) val = val[k];
             else break;
         }
         if (val === undefined || typeof val !== 'string') {
-            console.warn(`Missing key: ${key} in lang: ${lang}`);
-            return key;
+            console.warn(`Missing translation key: ${key} for language: ${lang}`);
+            return humanizeKey(key);
         }
     }
+    
     return val;
 }
 
@@ -434,7 +540,11 @@ function setLanguage(lang) {
     document.documentElement.lang = lang;
     document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
     applyTranslations();
+    
+    // Custom event to notify app.js to re-render dynamic content
     window.dispatchEvent(new CustomEvent('languageChanged', { detail: { language: lang } }));
+    
+    // Re-render current page if app.js is ready
     if (typeof renderPage === 'function' && typeof appState !== 'undefined') {
         renderPage(appState.currentPage || "dashboard");
     }
@@ -442,14 +552,20 @@ function setLanguage(lang) {
 
 function applyTranslations() {
     document.querySelectorAll('[data-i18n]').forEach(el => {
-        el.textContent = t(el.getAttribute('data-i18n'));
+        const key = el.getAttribute('data-i18n');
+        el.textContent = t(key);
     });
+    
     document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-        el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+        const key = el.getAttribute('data-i18n-placeholder');
+        el.placeholder = t(key);
     });
+    
+    // Update active state of language buttons
     document.querySelectorAll('.lang-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.lang === currentLanguage);
     });
+    
     const settingsLang = document.getElementById('setting-language');
     if (settingsLang) settingsLang.value = currentLanguage;
 }
@@ -459,6 +575,7 @@ document.documentElement.dir = currentLanguage === 'ar' ? 'rtl' : 'ltr';
 
 window.addEventListener('DOMContentLoaded', () => {
     applyTranslations();
+    
     document.querySelectorAll('.lang-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const targetBtn = e.target.closest('.lang-btn');
