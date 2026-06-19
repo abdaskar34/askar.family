@@ -27,7 +27,7 @@ const translations = {
             fajr: "Fajr", dhuhr: "Dhuhr", asr: "Asr", maghrib: "Maghrib", isha: "Isha"
         },
         status: {
-            upcoming: "Upcoming", active: "Active", completed: "Completed", missed: "Missed", pending: "Pending", onTime: "On time", late: "Late", loading: "Loading", fallback: "Using fallback prayer times"
+            upcoming: "Upcoming", active: "Active", completed: "Completed", missed: "Missed", pending: "Pending", onTime: "On time", late: "Late", loading: "Loading", fallback: "Using fallback prayer times", marked: "Marked"
         },
         family: {
             title: "Family Members",
@@ -44,7 +44,8 @@ const translations = {
             cancel: "Cancel",
             undo: "Undo",
             edit: "Edit",
-            done: "Done"
+            done: "Done",
+            completed: "Completed"
         },
         history: {
             title: "Prayer History",
@@ -98,6 +99,7 @@ const translations = {
             totalLate: "Total Late",
             noData: "No data yet",
             noDataDescription: "Start marking prayers to see statistics here.",
+            goToFamily: "Go to Family",
             bestMember: "Best Member",
             bestPrayer: "Best Prayer",
             mostMissedPrayer: "Most Missed Prayer",
@@ -136,7 +138,8 @@ const translations = {
             locHelper: "Used to calculate daily prayer times.",
             emptyCity: "Please enter a city.",
             emptyCountry: "Please enter a country.",
-            fallbackWarning: "Using fallback prayer times"
+            fallbackWarning: "Using fallback prayer times",
+            resetPreferences: "Reset Preferences"
         },
         modals: {
             verify: "Verify Identity",
@@ -191,7 +194,7 @@ const translations = {
             fajr: "Sabah", dhuhr: "Öğle", asr: "İkindi", maghrib: "Akşam", isha: "Yatsı"
         },
         status: {
-            upcoming: "Yaklaşan", active: "Aktif", completed: "Tamamlandı", missed: "Kaçırıldı", pending: "Beklemede", onTime: "Vaktinde", late: "Geç", loading: "Yükleniyor", fallback: "Yedek namaz vakitleri kullanılıyor"
+            upcoming: "Yaklaşan", active: "Aktif", completed: "Tamamlandı", missed: "Kaçırıldı", pending: "Beklemede", onTime: "Vaktinde", late: "Geç", loading: "Yükleniyor", fallback: "Yedek namaz vakitleri kullanılıyor", marked: "İşaretlendi"
         },
         family: {
             title: "Aile Üyeleri",
@@ -208,7 +211,8 @@ const translations = {
             cancel: "İptal",
             undo: "Geri Al",
             edit: "Düzenle",
-            done: "Yapıldı"
+            done: "Yapıldı",
+            completed: "Tamamlandı"
         },
         history: {
             title: "Namaz Geçmişi",
@@ -262,6 +266,7 @@ const translations = {
             totalLate: "Toplam Geç",
             noData: "Henüz veri yok",
             noDataDescription: "İstatistikleri görmek için namazları işaretlemeye başlayın.",
+            goToFamily: "Aileye Git",
             bestMember: "En İyi Üye",
             bestPrayer: "En İyi Namaz",
             mostMissedPrayer: "En Çok Kaçırılan Namaz",
@@ -300,7 +305,8 @@ const translations = {
             locHelper: "Günlük namaz vakitlerini hesaplamak için kullanılır.",
             emptyCity: "Lütfen şehir girin.",
             emptyCountry: "Lütfen ülke girin.",
-            fallbackWarning: "Yedek namaz vakitleri kullanılıyor"
+            fallbackWarning: "Yedek namaz vakitleri kullanılıyor",
+            resetPreferences: "Tercihleri Sıfırla"
         },
         modals: {
             verify: "Kimliği Doğrula",
@@ -355,7 +361,7 @@ const translations = {
             fajr: "الفجر", dhuhr: "الظهر", asr: "العصر", maghrib: "المغرب", isha: "العشاء"
         },
         status: {
-            upcoming: "قادمة", active: "نشطة", completed: "مكتملة", missed: "فائتة", pending: "قيد الانتظار", onTime: "في الوقت", late: "متأخرة", loading: "جاري التحميل", fallback: "يتم استخدام أوقات صلاة احتياطية"
+            upcoming: "قادمة", active: "نشطة", completed: "مكتملة", missed: "فائتة", pending: "قيد الانتظار", onTime: "في الوقت", late: "متأخرة", loading: "جاري التحميل", fallback: "يتم استخدام أوقات صلاة احتياطية", marked: "تم التسجيل"
         },
         family: {
             title: "أفراد العائلة",
@@ -372,7 +378,8 @@ const translations = {
             cancel: "إلغاء",
             undo: "تراجع",
             edit: "تعديل",
-            done: "تمت"
+            done: "تمت",
+            completed: "مكتملة"
         },
         history: {
             title: "سجل الصلوات",
@@ -426,6 +433,7 @@ const translations = {
             totalLate: "إجمالي المتأخر",
             noData: "لا توجد بيانات بعد",
             noDataDescription: "ابدأ بتسجيل الصلوات لعرض الإحصائيات هنا.",
+            goToFamily: "اذهب إلى العائلة",
             bestMember: "أفضل فرد",
             bestPrayer: "أفضل صلاة",
             mostMissedPrayer: "أكثر صلاة فائتة",
@@ -464,7 +472,8 @@ const translations = {
             locHelper: "يُستخدم لحساب أوقات الصلاة اليومية.",
             emptyCity: "يرجى إدخال المدينة.",
             emptyCountry: "يرجى إدخال البلد.",
-            fallbackWarning: "يتم استخدام أوقات صلاة احتياطية"
+            fallbackWarning: "يتم استخدام أوقات صلاة احتياطية",
+            resetPreferences: "إعادة ضبط التفضيلات"
         },
         modals: {
             verify: "التحقق من الهوية",

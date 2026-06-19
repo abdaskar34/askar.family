@@ -5,14 +5,6 @@
 
 const CONFIG = {
     members: ['Abdulla', 'Dana', 'Mohammed', 'Iman', 'Rahma', 'Ghofra'],
-    passwords: {
-        'Abdulla': 'abdulla123',
-        'Dana': 'dana123',
-        'Mohammed': 'mohammed123',
-        'Iman': 'iman123',
-        'Rahma': 'rahma123',
-        'Ghofra': 'ghofra123'
-    },
     prayers: ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'],
     storageKey: 'askar_v2_prayer_data',
     settingsKey: 'askar_v2_settings_data',
@@ -26,15 +18,10 @@ const CONFIG = {
 const appState = {
     language: "en",
     settings: {
-        city: "Istanbul",
-        country: "Turkey",
-        method: "13",
-        darkMode: false,
-        animations: true,
-        celebrations: true
+        darkMode: false
     },
     prayerTimes: null,
-    prayerTimeSource: "loading",
+    prayerTimeSource: "default",
     nextPrayer: null,
     records: {},
     currentPage: 'dashboard',
@@ -43,9 +30,8 @@ const appState = {
     quranInterval: null,
     clockInterval: null,
     quranIndex: 0,
-    charts: { overall: null, comparison: null, overallH: null, barH: null },
-    historyFilters: { start: '', end: '', member: 'all', prayer: 'all', status: 'all', search: '', view: 'timeline' },
-    pendingAction: null
+    charts: { overall: null, comparison: null, prayerPerformance: null, overallH: null, barH: null },
+    historyFilters: { start: '', end: '', member: 'all', prayer: 'all', status: 'all', search: '', view: 'timeline' }
 };
 
 // --- App Initialization ---
@@ -58,6 +44,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function initApp() {
     console.log("INIT START");
+
+    // Clean old password keys from localStorage
+    localStorage.removeItem('askar_passwords');
 
     loadSettings();
     loadRecords();
@@ -116,6 +105,10 @@ function navigateTo(page) {
     appState.currentPage = page;
     localStorage.setItem("askarFamilyCurrentPage", page);
     
+    // Update body class for page-specific CSS overrides
+    document.body.className = document.body.className.replace(/\bpage-\S+/g, '');
+    document.body.classList.add(`page-${page}`);
+
     // Update URL Hash
     if (window.location.hash !== "#" + page) {
         window.location.hash = page;
@@ -225,30 +218,8 @@ function getFallbackPrayerTimes() {
 }
 
 async function loadPrayerTimesSafe() {
-    try {
-        const city = appState.settings.city || "Istanbul";
-        const country = appState.settings.country || "Turkey";
-        const method = appState.settings.method || "13";
-        const url = `https://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&method=${method}`;
-        
-        console.log("Fetching prayer times:", url);
-        const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 6500);
-        const resp = await fetch(url, { signal: ctrl.signal });
-        clearTimeout(timeout);
-
-        if (!resp.ok) throw new Error("API status not ok");
-        const data = await resp.json();
-        const norm = normalizePrayerTimes(data?.data?.timings);
-        if (!norm) throw new Error("Normalization failed");
-        
-        appState.prayerTimes = norm;
-        appState.prayerTimeSource = "api";
-    } catch (e) {
-        console.warn("Prayer time loading failed, using fallback:", e);
-        appState.prayerTimes = getFallbackPrayerTimes();
-        appState.prayerTimeSource = "fallback";
-    }
+    appState.prayerTimes = getFallbackPrayerTimes();
+    appState.prayerTimeSource = "default";
 }
 
 // --- Clock ---
@@ -256,10 +227,11 @@ function startSidebarClock() {
     if (appState.clockInterval) clearInterval(appState.clockInterval);
     const update = () => {
         const now = new Date();
-        const tEl = document.getElementById('desktop-time'), dEl = document.getElementById('desktop-date'), mEl = document.getElementById('mobile-time'), hEl = document.getElementById('mobile-hijri');
+        const tEl = document.getElementById('desktop-time'), dEl = document.getElementById('desktop-date'), mEl = document.getElementById('mobile-time'), hEl = document.getElementById('mobile-hijri'), mdEl = document.getElementById('mobile-date');
         if (tEl) tEl.textContent = now.toLocaleTimeString([], { hour12: false });
         if (dEl) dEl.textContent = now.toLocaleDateString(appState.language, { weekday: 'long', day: 'numeric', month: 'long' });
         if (mEl) mEl.textContent = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+        if (mdEl) mdEl.textContent = now.toLocaleDateString(appState.language, { day: 'numeric', month: 'short' });
         if (hEl) {
             try { hEl.textContent = new Intl.DateTimeFormat(appState.language + '-u-ca-islamic-uma-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' }).format(now); } catch (e) { hEl.textContent = ""; }
         }
@@ -326,8 +298,7 @@ function renderDashboard() {
     if (!appState.prayerTimes) return;
     const n = document.getElementById('next-prayer-name'), r = document.getElementById('next-prayer-range');
     if (n) n.textContent = t(`prayer.${appState.nextPrayer.key}`);
-    const fb = appState.prayerTimeSource === 'fallback' ? `<br><span class="badge badge-warning" style="font-size:0.6rem; margin-top:0.5rem;">${t('dashboard.usingFallbackTimes')}</span>` : '';
-    if (r) r.innerHTML = `<span>${t('dashboard.startsAt')} ${appState.nextPrayer.time}</span>${fb}`;
+    if (r) r.innerHTML = `<span>${t('dashboard.startsAt')} ${appState.nextPrayer.time}</span>`;
     
     renderPrayerWindows();
     renderFamilyProgress();
@@ -466,29 +437,134 @@ function renderHistoryTable(recs) {
 function getStatusBadgeClass(status) { if (status === 'On time') return 'badge-success'; if (status === 'Late') return 'badge-danger'; if (status === 'Missed') return 'badge-danger'; return 'badge-info'; }
 
 function renderStats() {
-    const f = getFilteredHistory(), cnts = { 'On time': 0, 'Late': 0, 'Missed': 0 }; f.forEach(r => { if(cnts[r.status] !== undefined) cnts[r.status]++; });
+    const f = getFilteredHistory();
+    const sc = document.getElementById('stats-content'), se = document.getElementById('stats-empty-state');
+    
+    if (f.length === 0) {
+        if (sc) sc.classList.add('hidden');
+        if (se) se.classList.remove('hidden');
+        return;
+    }
+    
+    if (sc) sc.classList.remove('hidden');
+    if (se) se.classList.add('hidden');
+
+    const cnts = { 'On time': 0, 'Late': 0, 'Missed': 0 };
+    f.forEach(r => { if (cnts[r.status] !== undefined) cnts[r.status]++; });
+
+    // Update stat card numbers
+    const tot = f.length, ot = cnts['On time'], lt = cnts['Late'], mi = cnts['Missed'];
+    ['stats-card-total', 'stats-card-ontime', 'stats-card-late', 'stats-card-missed'].forEach((id, idx) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = [tot, ot, lt, mi][idx];
+    });
+
+    // 1. Overall Performance chart (doughnut)
     const ov = document.getElementById('chart-overall-donut');
-    if (ov) { if (appState.charts.overall) appState.charts.overall.destroy(); appState.charts.overall = new Chart(ov, { type: 'doughnut', data: { labels: [t('status.onTime'), t('status.late'), t('status.missed')], datasets: [{ data: [statusCounts['On time'], statusCounts['Late'], statusCounts['Missed']], backgroundColor: ['#2e7d32', '#d32f2f', '#90a4ae'], borderWidth: 0 }] }, options: { cutout: '70%', plugins: { legend: { position: 'bottom' } } } }); }
+    if (ov) {
+        try {
+            if (appState.charts.overall) appState.charts.overall.destroy();
+            appState.charts.overall = new Chart(ov, {
+                type: 'doughnut',
+                data: {
+                    labels: [t('status.onTime'), t('status.late'), t('status.missed')],
+                    datasets: [{
+                        data: [cnts['On time'], cnts['Late'], cnts['Missed']],
+                        backgroundColor: ['#2e7d32', '#fbc02d', '#d32f2f'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    cutout: '70%',
+                    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } } },
+                    maintainAspectRatio: false
+                }
+            });
+        } catch (err) { console.error("Chart overall failed", err); }
+    }
+
+    // 2. Member Comparison chart (bar)
     const cmp = document.getElementById('chart-member-comparison');
     if (cmp) {
-        const p = {}; CONFIG.members.forEach(m => p[m] = { d: 0, ot: 0 }); f.forEach(r => { p[r.member].d++; if (r.status === 'On time') p[r.member].ot++; });
-        if (appState.charts.comparison) appState.charts.comparison.destroy(); appState.charts.comparison = new Chart(cmp, { type: 'bar', data: { labels: CONFIG.members, datasets: [{ label: t('status.onTime'), data: CONFIG.members.map(m => p[m].ot), backgroundColor: '#d4af37' }, { label: t('family.completed'), data: CONFIG.members.map(m => p[m].d), backgroundColor: '#1b4332' }] }, options: { scales: { y: { beginAtZero: true } }, plugins: { legend: { position: 'bottom' } } } });
+        try {
+            const p = {}; CONFIG.members.forEach(m => p[m] = { d: 0, ot: 0 });
+            f.forEach(r => { p[r.member].d++; if (r.status === 'On time') p[r.member].ot++; });
+            if (appState.charts.comparison) appState.charts.comparison.destroy();
+            appState.charts.comparison = new Chart(cmp, {
+                type: 'bar',
+                data: {
+                    labels: CONFIG.members,
+                    datasets: [
+                        { label: t('status.onTime'), data: CONFIG.members.map(m => p[m].ot), backgroundColor: '#d4af37' },
+                        { label: t('family.completed'), data: CONFIG.members.map(m => p[m].d), backgroundColor: '#1b4332' }
+                    ]
+                },
+                options: {
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+                    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } } },
+                    maintainAspectRatio: false
+                }
+            });
+        } catch (err) { console.error("Chart comparison failed", err); }
     }
-    const c = document.getElementById('stats-insights'); if (!c) return; c.innerHTML = ''; const i = [];
-    if (f.length > 0) {
-        const pm = {}; f.forEach(r => { if (r.status !== 'On time') pm[r.prayer] = (pm[r.prayer] || 0) + 1; }); const wp = Object.entries(pm).sort((a,b) => b[1] - a[1])[0];
+
+    // 3. Prayer Performance chart (bar)
+    const prp = document.getElementById('chart-prayer-performance');
+    if (prp) {
+        try {
+            const perf = {}; CONFIG.prayers.forEach(pr => perf[pr] = { ot: 0, lm: 0 });
+            f.forEach(r => {
+                if (perf[r.prayer]) {
+                    if (r.status === 'On time') perf[r.prayer].ot++;
+                    else perf[r.prayer].lm++;
+                }
+            });
+            if (appState.charts.prayerPerformance) appState.charts.prayerPerformance.destroy();
+            appState.charts.prayerPerformance = new Chart(prp, {
+                type: 'bar',
+                data: {
+                    labels: CONFIG.prayers.map(pr => t('prayer.' + pr.toLowerCase())),
+                    datasets: [
+                        { label: t('status.onTime'), data: CONFIG.prayers.map(pr => perf[pr].ot), backgroundColor: '#2e7d32', borderRadius: 4 },
+                        { label: t('status.late') + '/' + t('status.missed'), data: CONFIG.prayers.map(pr => perf[pr].lm), backgroundColor: '#d32f2f', borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } },
+                    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } } },
+                    maintainAspectRatio: false
+                }
+            });
+        } catch (err) { console.error("Chart prayer performance failed", err); }
+    }
+
+    // 4. Insights
+    const c = document.getElementById('stats-insights');
+    if (c) {
+        c.innerHTML = '';
+        const i = [];
+        const pm = {}; f.forEach(r => { if (r.status !== 'On time') pm[r.prayer] = (pm[r.prayer] || 0) + 1; });
+        const wp = Object.entries(pm).sort((a, b) => b[1] - a[1])[0];
         if (wp) i.push(`${t('messages.mostMissed')} <strong>${t('prayer.' + wp[0].toLowerCase())}</strong>.`);
-        const bm = CONFIG.members.map(m => { const mr = f.filter(r => r.member === m), ot = mr.filter(r => r.status === 'On time').length; return { name: m, rate: mr.length > 0 ? (ot / mr.length) : 0 }; }).sort((a,b) => b.rate - a.rate)[0];
+        const bm = CONFIG.members.map(m => {
+            const mr = f.filter(r => r.member === m), ot = mr.filter(r => r.status === 'On time').length;
+            return { name: m, rate: mr.length > 0 ? (ot / mr.length) : 0 };
+        }).sort((a, b) => b.rate - a.rate)[0];
         if (bm && bm.rate > 0) i.push(`<strong>${bm.name}</strong> ${t('messages.highestRate')}`);
+        
+        i.forEach(txt => {
+            const d = document.createElement('div');
+            d.className = 'card insight-card';
+            d.innerHTML = `<p>${txt}</p>`;
+            c.appendChild(d);
+        });
     }
-    i.forEach(txt => { const d = document.createElement('div'); d.className = 'card insight-card'; d.innerHTML = `<p>${txt}</p>`; c.appendChild(d); });
 }
 
 function renderSettings() {
     const s = appState.settings;
-    ['setting-city', 'setting-country', 'setting-method', 'setting-dark-mode', 'setting-animations', 'setting-celebrations'].forEach(id => { const el = document.getElementById(id); if (el) { if (el.type === 'checkbox') el.checked = s[id.split('-').pop()]; else el.value = s[id.split('-').pop()]; } });
-    const bl = document.getElementById('badge-lang'), bc = document.getElementById('badge-city'), ln = { 'en': 'English', 'tr': 'Türkçe', 'ar': 'العربية' };
-    if (bl) bl.textContent = ln[appState.language]; if (bc) bc.textContent = s.city;
+    const dmEl = document.getElementById('setting-dark-mode');
+    if (dmEl) dmEl.checked = !!s.darkMode;
 }
 
 // --- Modals ---
@@ -509,7 +585,7 @@ function renderMemberChecklist(m) {
         if (r) {
             h = `
                 <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem;">
-                    <span class="badge ${getStatusBadgeClass(r.status)}">${t('status.' + (r.status === 'On time' ? 'onTime' : r.status.toLowerCase()))} &middot; ${r.time}</span>
+                    <span class="badge ${getStatusBadgeClass(r.status)}">${t('status.marked')} (${t('status.' + (r.status === 'On time' ? 'onTime' : r.status.toLowerCase()))}) &middot; ${r.time}</span>
                     <button class="btn btn-ghost btn-sm" onclick="undoPrayer('${m}', '${p}')" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;">
                         <i class="fas fa-undo"></i> ${t('family.undo')}
                     </button>
@@ -517,22 +593,11 @@ function renderMemberChecklist(m) {
             `;
         }
         else if (nm < pmIn) h = `<button class="btn btn-ghost text-muted" disabled>${t('modals.upcoming')}</button>`;
-        else h = `<button class="btn btn-primary btn-sm" onclick="startPrayerMarking('${m}', '${p}')">${t('modals.markDone')}</button>`;
+        else h = `<button class="btn btn-primary btn-sm" onclick="markPrayer('${m}', '${p}')">${t('modals.markDone')}</button>`;
         const div = document.createElement('div'); div.className = `prayer-row ${r ? 'completed' : ''}`;
         div.innerHTML = `<div class="prayer-meta"><span class="p-name">${t('prayer.' + p.toLowerCase())}</span><span class="p-window">${t('modals.startsAt')} ${pt}</span></div><div class="prayer-action">${h}</div>`;
         c.appendChild(div);
     });
-}
-
-function startPrayerMarking(m, p) {
-    appState.pendingAction = { m, p }; const prm = document.getElementById('password-prompt-text'); if (prm) prm.textContent = `${t('modals.enterPass')} ${m}`;
-    const inp = document.getElementById('member-password-input'); if (inp) inp.value = ''; document.getElementById('password-modal').classList.add('active');
-}
-
-function verifyPassword() {
-    if (!appState.pendingAction) return; const i = document.getElementById('member-password-input');
-    if (i.value === CONFIG.passwords[appState.pendingAction.m]) { document.getElementById('password-modal').classList.remove('active'); markPrayer(appState.pendingAction.m, appState.pendingAction.p); appState.pendingAction = null; }
-    else showToast(t('messages.incorrectPass'), "danger");
 }
 
 function markPrayer(m, p) {
@@ -542,7 +607,6 @@ function markPrayer(m, p) {
     if (!appState.records[appState.currentDate]) appState.records[appState.currentDate] = {}; if (!appState.records[appState.currentDate][m]) appState.records[appState.currentDate][m] = {};
     appState.records[appState.currentDate][m][p] = { status: s, time: now.toLocaleTimeString([], { hour12: false }), timestamp: now.getTime() };
     saveToStorage(); showToast(`${m} ${t('messages.marked')} ${t('prayer.' + p.toLowerCase())} ${t('status.' + (s === 'On time' ? 'onTime' : s.toLowerCase()))}!`);
-    if (appState.settings.celebrations && getMemberStats(m, appState.currentDate).onTime === 5) triggerConfetti();
     refreshUI(m);
 }
 
@@ -579,31 +643,107 @@ function renderAll() {
 }
 
 function attachEventListeners() {
-    document.querySelectorAll('.nav-btn').forEach(b => b.onclick = () => switchView(b.dataset.view));
     document.querySelectorAll('.close-modal').forEach(b => b.onclick = () => document.querySelectorAll('.modal').forEach(m => m.classList.remove('active')));
-    const cf = document.getElementById('confirm-password-btn'); if (cf) cf.onclick = verifyPassword;
-    const pi = document.getElementById('member-password-input'); if (pi) pi.onkeyup = (e) => { if(e.key === 'Enter') verifyPassword(); };
-    const sb = document.getElementById('save-settings-btn');
-    if (sb) sb.onclick = async () => {
-        const c = document.getElementById('setting-city').value.trim(), cn = document.getElementById('setting-country').value.trim();
-        if (!c) { showToast(t('settings.emptyCity'), "danger"); return; } if (!cn) { showToast(t('settings.emptyCountry'), "danger"); return; }
-        appState.settings.city = c; appState.settings.country = cn; appState.settings.method = document.getElementById('setting-method').value;
-        saveToStorage(); sb.disabled = true; await loadPrayerTimesSafe(); sb.disabled = false; showToast(t('messages.settingsSaved')); calculateNextPrayer(); renderAll();
-    };
-    ['setting-dark-mode', 'setting-animations', 'setting-celebrations'].forEach(id => { const el = document.getElementById(id); if (el) el.onchange = (e) => { appState.settings[id.split('-').pop()] = e.target.checked; if (id === 'setting-dark-mode') setupTheme(); saveToStorage(); }; });
-    ['history-date-start', 'history-date-end', 'history-filter-member', 'history-filter-prayer', 'history-filter-status'].forEach(id => { const el = document.getElementById(id); if (el) el.onchange = (e) => { appState.historyFilters[id.split('-').pop()] = e.target.value; renderHistory(); }; });
-    const hs = document.getElementById('history-search'); if (hs) hs.oninput = (e) => { appState.historyFilters.search = e.target.value; renderHistory(); };
-    const rH = document.getElementById('history-reset-btn'), rE = document.getElementById('history-reset-empty-btn');
-    const rf = () => { initHistoryFilters(); appState.historyFilters.member = 'all'; appState.historyFilters.prayer = 'all'; appState.historyFilters.status = 'all'; appState.historyFilters.search = ''; ['history-filter-member', 'history-filter-prayer', 'history-filter-status', 'history-search'].forEach(id => { const el = document.getElementById(id); if (el) el.value = (id === 'history-search' ? '' : 'all'); }); renderHistory(); };
-    if (rH) rH.onclick = rf; if (rE) rE.onclick = rf;
-    document.querySelectorAll('.switcher-btn').forEach(b => b.onclick = () => { document.querySelectorAll('.switcher-btn').forEach(x => x.classList.remove('active')); b.classList.add('active'); appState.historyFilters.view = b.dataset.historyView; renderHistory(); });
-    document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => {
-        document.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('active')); b.classList.add('active');
-        const td = new Date(); let st = new Date(); switch(b.dataset.range) { case 'week': st.setDate(td.getDate() - 7); break; case 'month': st.setMonth(td.getMonth() - 1); break; case 'all': start = new Date(2000, 0, 1); break; }
-        appState.historyFilters.start = getFormattedDate(st); appState.historyFilters.end = getFormattedDate(td); renderStats();
+    
+    // Theme toggle
+    const dmEl = document.getElementById('setting-dark-mode');
+    if (dmEl) {
+        dmEl.onchange = (e) => {
+            appState.settings.darkMode = e.target.checked;
+            setupTheme();
+            saveToStorage();
+        };
+    }
+    
+    // History filters
+    ['history-date-start', 'history-date-end', 'history-filter-member', 'history-filter-prayer', 'history-filter-status'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.onchange = () => {
+            appState.historyFilters[id.split('-').pop()] = el.value;
+            renderHistory();
+        };
     });
+    
+    const hs = document.getElementById('history-search');
+    if (hs) hs.oninput = (e) => {
+        appState.historyFilters.search = e.target.value;
+        renderHistory();
+    };
+    
+    const rH = document.getElementById('history-reset-btn'), rE = document.getElementById('history-reset-empty-btn');
+    const rf = () => {
+        initHistoryFilters();
+        appState.historyFilters.member = 'all';
+        appState.historyFilters.prayer = 'all';
+        appState.historyFilters.status = 'all';
+        appState.historyFilters.search = '';
+        ['history-filter-member', 'history-filter-prayer', 'history-filter-status', 'history-search'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = (id === 'history-search' ? '' : 'all');
+        });
+        renderHistory();
+    };
+    if (rH) rH.onclick = rf;
+    if (rE) rE.onclick = rf;
+    
+    // Switch views
+    document.querySelectorAll('.switcher-btn').forEach(b => b.onclick = () => {
+        document.querySelectorAll('.switcher-btn').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        appState.historyFilters.view = b.dataset.historyView;
+        renderHistory();
+    });
+    
+    // Stats Range Tabs
+    document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => {
+        document.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        const td = new Date();
+        let st = new Date();
+        switch (b.dataset.range) {
+            case 'week': st.setDate(td.getDate() - 7); break;
+            case 'month': st.setMonth(td.getMonth() - 1); break;
+            case 'all': st = new Date(2000, 0, 1); break;
+        }
+        appState.historyFilters.start = getFormattedDate(st);
+        appState.historyFilters.end = getFormattedDate(td);
+        renderStats();
+    });
+    
+    // Data backup
     const expJ = document.getElementById('btn-export-json'), ec = document.getElementById('btn-export-csv'), ij = document.getElementById('import-json'), ra = document.getElementById('btn-reset-all');
-    if (ej) ej.onclick = exportJSON; if (ec) ec.onclick = exportCSV; if (ij) ij.onchange = importJSON; if (ra) ra.onclick = () => { if (confirm(t('settings.areYouSure') + '\n\n' + t('messages.resetWarn'))) { appState.records = {}; saveToStorage(); renderAll(); showToast(t('messages.resetDone')); } };
+    if (expJ) expJ.onclick = exportJSON;
+    if (ec) ec.onclick = exportCSV;
+    if (ij) ij.onchange = importJSON;
+    if (ra) ra.onclick = () => {
+        if (confirm(t('settings.areYouSure') + '\n\n' + t('messages.resetWarn'))) {
+            appState.records = {};
+            saveToStorage();
+            renderAll();
+            showToast(t('messages.resetDone'));
+        }
+    };
+    
+    // Reset Preferences Button
+    const rp = document.getElementById('btn-reset-preferences');
+    if (rp) {
+        rp.onclick = () => {
+            if (confirm(t('settings.areYouSure'))) {
+                localStorage.removeItem(CONFIG.settingsKey);
+                appState.settings = { darkMode: false };
+                setLanguage('en');
+                setupTheme();
+                renderAll();
+                showToast(t('messages.settingsSaved'));
+            }
+        };
+    }
+    
+    // Go to Family empty stats button
+    const gtf = document.getElementById('stats-go-to-family-btn');
+    if (gtf) {
+        gtf.onclick = () => navigateTo('family');
+    }
 }
 
 function showToast(m, tp = 'info') { const c = document.getElementById('toast-container'); if (!c) return; const t = document.createElement('div'); t.className = `toast ${tp}`; t.textContent = m; c.appendChild(t); setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 500); }, 3000); }

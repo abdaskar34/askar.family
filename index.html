@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Askar Family Prayer Tracker</title>
-    <link rel="stylesheet" href="style.css?v=2.5">
+    <link rel="stylesheet" href="style.css?v=20">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:wght@700&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
     <!-- Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="i18n.js?v=2.5"></script>
+    <script src="i18n.js?v=20" defer></script>
+    <script src="app.js?v=20" defer></script>
 </head>
 <body class="light-mode">
     <div class="app-shell">
@@ -56,19 +56,22 @@
 
             <!-- Mobile Header -->
             <header class="mobile-header">
-                <div class="mobile-brand">
-                    <i class="fas fa-moon"></i>
-                    <span>Askar Family</span>
-                </div>
-                <div class="mobile-header-actions">
+                <div class="mobile-header-top">
+                    <div class="mobile-brand">
+                        <i class="fas fa-moon"></i>
+                        <span>Askar Family</span>
+                    </div>
                     <div class="lang-switcher mobile-lang">
                         <button class="lang-btn active" data-lang="en">EN</button>
                         <button class="lang-btn" data-lang="tr">TR</button>
                         <button class="lang-btn" data-lang="ar">AR</button>
                     </div>
-                    <div class="mobile-time-info">
-                        <div id="mobile-time">00:00</div>
-                        <div id="mobile-hijri" class="hijri-badge">...</div>
+                </div>
+                <div class="mobile-header-bottom">
+                    <div id="mobile-time">00:00</div>
+                    <div class="mobile-date-group">
+                        <span id="mobile-date">...</span>
+                        <span id="mobile-hijri" class="hijri-badge">...</span>
                     </div>
                 </div>
             </header>
@@ -285,6 +288,7 @@
             <section id="view-statistics" class="view-container">
                 <div class="section-header">
                     <h2 class="view-title" data-i18n="stats.title">Statistics & Insights</h2>
+                    <p class="view-subtitle" data-i18n="stats.subtitle">Visual prayer consistency overview</p>
                 </div>
 
                 <div class="stats-tabs">
@@ -294,7 +298,39 @@
                     <button class="tab-btn" data-range="all" data-i18n="stats.allTime">All Time</button>
                 </div>
 
-                <div class="stats-dashboard">
+                <div id="stats-content" class="stats-dashboard">
+                    <!-- Quick Stat Cards -->
+                    <div class="history-stats-grid">
+                        <div class="stat-card compact total">
+                            <div class="stat-icon"><i class="fas fa-clipboard-list"></i></div>
+                            <div class="stat-data">
+                                <span id="stats-card-total" class="stat-num">0</span>
+                                <span class="stat-label" data-i18n="history.totalRecords">Total Records</span>
+                            </div>
+                        </div>
+                        <div class="stat-card compact on-time">
+                            <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+                            <div class="stat-data">
+                                <span id="stats-card-ontime" class="stat-num">0</span>
+                                <span class="stat-label" data-i18n="history.onTime">On Time</span>
+                            </div>
+                        </div>
+                        <div class="stat-card compact late">
+                            <div class="stat-icon"><i class="fas fa-clock"></i></div>
+                            <div class="stat-data">
+                                <span id="stats-card-late" class="stat-num">0</span>
+                                <span class="stat-label" data-i18n="history.late">Late</span>
+                            </div>
+                        </div>
+                        <div class="stat-card compact missed">
+                            <div class="stat-icon"><i class="fas fa-times-circle"></i></div>
+                            <div class="stat-data">
+                                <span id="stats-card-missed" class="stat-num">0</span>
+                                <span class="stat-label" data-i18n="history.missed">Missed</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="stats-main-grid">
                         <div class="card chart-card">
                             <h3 class="card-title" data-i18n="stats.overallPerf">Overall Performance</h3>
@@ -308,9 +344,24 @@
                                 <canvas id="chart-member-comparison"></canvas>
                             </div>
                         </div>
+                        <div class="card chart-card">
+                            <h3 class="card-title" data-i18n="stats.prayerPerformance">Prayer Performance</h3>
+                            <div class="chart-container">
+                                <canvas id="chart-prayer-performance"></canvas>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="insights-grid" id="stats-insights"></div>
+                </div>
+
+                <div id="stats-empty-state" class="empty-state hidden">
+                    <div class="empty-content text-center" style="padding: 3rem 1.5rem; text-align: center;">
+                        <i class="fas fa-chart-bar empty-icon" style="font-size: 3rem; color: var(--text-muted); margin-bottom: 1.5rem; display: block;"></i>
+                        <h3 class="mb-2" data-i18n="stats.noData" style="font-weight: 600; margin-bottom: 0.5rem;">No data yet</h3>
+                        <p class="text-muted mb-4" data-i18n="stats.noDataDescription" style="margin-bottom: 1.5rem; color: var(--text-secondary);">Start marking prayers to see statistics here.</p>
+                        <button id="stats-go-to-family-btn" class="btn btn-primary btn-sm" data-i18n="stats.goToFamily"><i class="fas fa-users"></i> Go to Family</button>
+                    </div>
                 </div>
             </section>
 
@@ -321,58 +372,12 @@
                         <i class="fas fa-cog section-icon"></i>
                         <div>
                             <h2 class="view-title" data-i18n="settings.title">Settings</h2>
-                            <p class="view-subtitle" data-i18n="settings.subtitle">Manage prayer times, appearance, language, and data.</p>
+                            <p class="view-subtitle" data-i18n="settings.subtitle">Manage appearance, language, and data.</p>
                         </div>
                     </div>
-                </div>
-
-                <!-- Quick Status Badges -->
-                <div class="settings-badges-row">
-                    <span class="badge badge-info"><i class="fas fa-globe"></i> <span id="badge-lang"></span></span>
-                    <span class="badge badge-success"><i class="fas fa-map-marker-alt"></i> <span id="badge-city"></span></span>
-                    <span class="badge badge-warning"><i class="fas fa-server"></i> <span data-i18n="settings.prayerSource">Prayer Source</span>: AlAdhan</span>
                 </div>
 
                 <div class="settings-grid dual-column-grid">
-                    <!-- Location & Method Card -->
-                    <div class="card modern-settings-card">
-                        <div class="card-header-icon">
-                            <div class="icon-circle"><i class="fas fa-map-marked-alt"></i></div>
-                            <h3 class="card-title" data-i18n="settings.locLogic">Location & Prayer Method</h3>
-                        </div>
-                        <div class="settings-form">
-                            <div class="modern-input-group">
-                                <label data-i18n="settings.city">City</label>
-                                <div class="input-icon-wrapper">
-                                    <i class="fas fa-city"></i>
-                                    <input type="text" id="setting-city" class="modern-input">
-                                </div>
-                                <p class="input-helper" data-i18n="settings.locHelper">Used to calculate daily prayer times.</p>
-                            </div>
-                            <div class="modern-input-group">
-                                <label data-i18n="settings.country">Country</label>
-                                <div class="input-icon-wrapper">
-                                    <i class="fas fa-flag"></i>
-                                    <input type="text" id="setting-country" class="modern-input">
-                                </div>
-                                <p class="input-helper" data-i18n="settings.locHelper">Used to calculate daily prayer times.</p>
-                            </div>
-                            <div class="modern-input-group">
-                                <label data-i18n="settings.prayerMethod">Prayer Method</label>
-                                <div class="input-icon-wrapper">
-                                    <i class="fas fa-calculator"></i>
-                                    <select id="setting-method" class="modern-input">
-                                        <option value="13">Diyanet (Turkey)</option>
-                                        <option value="3">Muslim World League</option>
-                                        <option value="2">Islamic Society of North America (ISNA)</option>
-                                        <option value="4">Umm Al-Qura University, Makkah</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <button id="save-settings-btn" class="btn btn-primary w-full mt-3"><i class="fas fa-save"></i> <span data-i18n="settings.saveSettings">Save Settings</span></button>
-                        </div>
-                    </div>
-
                     <!-- Appearance & Language Card -->
                     <div class="card modern-settings-card">
                         <div class="card-header-icon">
@@ -395,39 +400,27 @@
                                     <span class="slider round"></span>
                                 </label>
                             </div>
-                            <div class="setting-row">
-                                <span class="setting-label"><i class="fas fa-magic text-muted"></i> <span data-i18n="settings.animations">Animations</span></span>
-                                <label class="switch modern-switch">
-                                    <input type="checkbox" id="setting-animations">
-                                    <span class="slider round"></span>
-                                </label>
-                            </div>
-                            <div class="setting-row">
-                                <span class="setting-label"><i class="fas fa-glass-cheers text-muted"></i> <span data-i18n="settings.celebrations">Celebrations</span></span>
-                                <label class="switch modern-switch">
-                                    <input type="checkbox" id="setting-celebrations">
-                                    <span class="slider round"></span>
-                                </label>
-                            </div>
                         </div>
                     </div>
 
                     <!-- Data Management Card -->
-                    <div class="card modern-settings-card full-width-card">
+                    <div class="card modern-settings-card">
                         <div class="card-header-icon">
                             <div class="icon-circle"><i class="fas fa-database"></i></div>
                             <h3 class="card-title" data-i18n="settings.dataManagement">Data Management</h3>
                         </div>
-                        <div class="data-actions-modern">
+                        <div class="data-actions-modern" style="display: flex; flex-direction: column; gap: 1rem;">
                             <button id="btn-export-json" class="btn btn-action btn-green"><i class="fas fa-file-code"></i> <span data-i18n="settings.exportJson">Export JSON</span></button>
                             <button id="btn-export-csv" class="btn btn-action btn-green"><i class="fas fa-file-csv"></i> <span data-i18n="settings.exportCsv">Export CSV</span></button>
                             
-                            <label for="import-json" class="btn btn-action btn-gold"><i class="fas fa-upload"></i> <span data-i18n="settings.importBackup">Import Backup</span></label>
+                            <label for="import-json" class="btn btn-action btn-gold" style="cursor: pointer;"><i class="fas fa-upload"></i> <span data-i18n="settings.importBackup">Import Backup</span></label>
                             <input type="file" id="import-json" hidden accept=".json">
                             
-                            <div class="danger-zone">
-                                <button id="btn-reset-all" class="btn btn-action btn-danger-solid"><i class="fas fa-trash-alt"></i> <span data-i18n="settings.clearAllData">Clear All Data</span></button>
-                                <p class="danger-text" data-i18n="settings.warning">This action cannot be undone.</p>
+                            <button id="btn-reset-preferences" class="btn btn-action btn-outline"><i class="fas fa-sync-alt"></i> <span data-i18n="settings.resetPreferences">Reset Preferences</span></button>
+
+                            <div class="danger-zone" style="margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+                                <button id="btn-reset-all" class="btn btn-action btn-danger-solid w-full"><i class="fas fa-trash-alt"></i> <span data-i18n="settings.clearAllData">Clear All Data</span></button>
+                                <p class="danger-text" data-i18n="settings.warning" style="text-align: center; margin-top: 0.5rem;">This action cannot be undone.</p>
                             </div>
                         </div>
                     </div>
@@ -482,24 +475,6 @@
         </div>
     </div>
 
-    <!-- Password Modal -->
-    <div id="password-modal" class="modal">
-        <div class="modal-content small-modal">
-            <div class="modal-header">
-                <h3 data-i18n="modals.verify">Verify Identity</h3>
-                <button class="close-modal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p id="password-prompt-text" class="mb-4"></p>
-                <div class="password-input-group">
-                    <input type="password" id="member-password-input" data-i18n-placeholder="modals.password">
-                    <button id="confirm-password-btn" class="btn btn-primary w-full" data-i18n="modals.confirm">Confirm</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <div id="toast-container"></div>
-    <script src="app.js?v=2.5"></script>
 </body>
 </html>
