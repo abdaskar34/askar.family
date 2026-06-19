@@ -341,19 +341,163 @@ function renderFamilyProgress() {
 }
 
 // --- Page Rendering ---
+function getLastActivity(m) {
+    const r = (appState.records[appState.currentDate] || {})[m] || {};
+    const keys = Object.keys(r);
+    if (keys.length === 0) return null;
+    let lastKey = null;
+    let maxTime = 0;
+    keys.forEach(p => {
+        if (r[p].timestamp > maxTime) {
+            maxTime = r[p].timestamp;
+            lastKey = p;
+        }
+    });
+    if (!lastKey) return null;
+    return {
+        prayer: lastKey,
+        time: r[lastKey].time.substring(0, 5)
+    };
+}
+
+function getMemberMissedCount(m, d) {
+    const today = getFormattedDate(new Date());
+    const r = (appState.records[d] || {})[m] || {};
+    if (d !== today) {
+        return 5 - Object.keys(r).length;
+    }
+    const tms = appState.prayerTimes;
+    if (!tms) return 0;
+    const now = new Date();
+    const nm = now.getHours() * 60 + now.getMinutes();
+    const wins = [
+        { key: "Fajr", end: tms.Sunrise },
+        { key: "Dhuhr", end: tms.Asr },
+        { key: "Asr", end: tms.Maghrib },
+        { key: "Maghrib", end: tms.Isha },
+        { key: "Isha", end: tms.Fajr }
+    ];
+    let missed = 0;
+    wins.forEach(w => {
+        if (!r[w.key]) {
+            const [eh, em] = w.end.split(':').map(Number);
+            let eMin = eh * 60 + em;
+            if (w.key === 'Isha' && eMin < (Number(tms.Isha.split(':')[0]) * 60)) eMin += 1440;
+            let cMin = nm + ((w.key === 'Isha' && nm < (Number(tms.Isha.split(':')[0]) * 60)) ? 1440 : 0);
+            if (cMin >= eMin) missed++;
+        }
+    });
+    return missed;
+}
+
+function isLateInDay(d) {
+    const today = getFormattedDate(new Date());
+    if (d !== today) return true;
+    const now = new Date();
+    return now.getHours() >= 15;
+}
+
 function renderFamily() {
     const c = document.getElementById('family-members-grid'); if (!c) return; c.innerHTML = '';
-    CONFIG.members.forEach(m => {
+    CONFIG.members.forEach((m, idx) => {
         const s = getMemberStats(m, appState.currentDate);
-        const card = document.createElement('div'); card.className = 'card member-card'; card.onclick = () => openMemberModal(m);
-        card.innerHTML = `<div class="member-card-header"><div><h3 class="member-name">${m}</h3><div class="streak-badge"><i class="fas fa-fire"></i> ${getMemberStreak(m)} ${t('family.streak')}</div></div><div class="member-progress-mini"><svg width="65" height="65"><circle stroke="var(--border-color)" stroke-width="4" fill="transparent" r="28" cx="32" cy="32"/><circle stroke="var(--primary-color)" stroke-width="4" fill="transparent" r="28" cx="32" cy="32" stroke-dasharray="175.9" stroke-dashoffset="${175.9 - (175.9 * s.percentage / 100)}"/></svg><span class="progress-text-mini">${s.percentage}%</span></div></div><div class="member-stats-row"><div class="stat-item"><span class="stat-val">${s.done}/5</span><span class="stat-label">${t('family.done')}</span></div><div class="stat-item"><span class="stat-val">${s.onTime}</span><span class="stat-label">${t('family.onTime')}</span></div><div class="stat-item"><span class="stat-val">${s.late}</span><span class="stat-label">${t('family.late')}</span></div></div><div class="member-card-footer"><span class="badge ${s.badgeClass}">${t('family.' + s.statusKey)}</span><i class="fas fa-chevron-right text-muted"></i></div>`;
+        
+        let activityStr = '';
+        const act = getLastActivity(m);
+        if (act) {
+            const prName = t('prayer.' + act.prayer.toLowerCase());
+            activityStr = t('family.lastMarked').replace('{prayer}', prName).replace('{time}', act.time);
+        } else {
+            activityStr = t('family.noActivity');
+        }
+        
+        const card = document.createElement('div');
+        card.className = 'card member-card';
+        card.style.animationDelay = `${idx * 0.05}s`;
+        card.onclick = () => openMemberModal(m);
+        
+        card.innerHTML = `
+            <div class="member-card-header">
+                <div class="member-profile">
+                    <div class="member-avatar-wrapper">
+                        <span class="member-avatar-initial">${m.charAt(0)}</span>
+                    </div>
+                    <div>
+                        <h3 class="member-name">${m}</h3>
+                        <div class="streak-badge"><i class="fas fa-fire"></i> ${getMemberStreak(m)} ${t('family.streak')}</div>
+                    </div>
+                </div>
+                <div class="member-progress-mini">
+                    <svg width="65" height="65">
+                        <circle stroke="var(--border-color)" stroke-width="4" fill="transparent" r="28" cx="32" cy="32"/>
+                        <circle stroke="var(--primary-color)" stroke-width="4" fill="transparent" r="28" cx="32" cy="32" stroke-dasharray="175.9" stroke-dashoffset="${175.9 - (175.9 * s.percentage / 100)}"/>
+                    </svg>
+                    <span class="progress-text-mini">${s.percentage}%</span>
+                </div>
+            </div>
+            
+            <div class="member-stats-container">
+                <div class="member-stat-row-new">
+                    <div class="stat-item-new">
+                        <span class="stat-icon-mini text-success"><i class="fas fa-check-circle"></i></span>
+                        <span class="stat-label-new">${t('family.done')}</span>
+                        <span class="stat-val-new">${s.done}/5</span>
+                    </div>
+                    <div class="stat-item-new">
+                        <span class="stat-icon-mini text-success"><i class="fas fa-clock"></i></span>
+                        <span class="stat-label-new">${t('family.onTime')}</span>
+                        <span class="stat-val-new">${s.onTime}</span>
+                    </div>
+                    <div class="stat-item-new">
+                        <span class="stat-icon-mini text-warning"><i class="fas fa-exclamation-circle"></i></span>
+                        <span class="stat-label-new">${t('family.late')}</span>
+                        <span class="stat-val-new">${s.late}</span>
+                    </div>
+                    <div class="stat-item-new">
+                        <span class="stat-icon-mini text-muted"><i class="fas fa-hourglass-half"></i></span>
+                        <span class="stat-label-new">${t('family.pendingOrMissed')}</span>
+                        <span class="stat-val-new">${5 - s.done}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="member-card-activity">
+                <span class="activity-label"><i class="far fa-clock"></i> ${activityStr}</span>
+            </div>
+            
+            <div class="member-card-footer">
+                <span class="badge ${s.badgeClass}">${t('family.' + s.statusKey)}</span>
+                <button class="btn-card-action" onclick="event.stopPropagation(); openMemberModal('${m}')">
+                    <span>${t('family.open')}</span> <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+        `;
         c.appendChild(card);
     });
 }
 
 function getMemberStats(m, d) {
-    const r = (appState.records[d] || {})[m] || {}; const dn = Object.keys(r).length, ot = Object.values(r).filter(x => x.status === 'On time').length, lt = Object.values(r).filter(x => x.status === 'Late').length, pct = Math.round((dn / 5) * 100);
-    let sk = "notStarted", bc = "badge-danger"; if (dn === 5) { sk = (ot === 5) ? "perfectDay" : "completed"; bc = (ot === 5) ? "badge-gold" : "badge-success"; } else if (dn > 0) { sk = "inProgress"; bc = "badge-info"; }
+    const r = (appState.records[d] || {})[m] || {};
+    const dn = Object.keys(r).length;
+    const ot = Object.values(r).filter(x => x.status === 'On time').length;
+    const lt = Object.values(r).filter(x => x.status === 'Late').length;
+    const pct = Math.round((dn / 5) * 100);
+    
+    let sk = "notStarted";
+    let bc = "badge-danger";
+    
+    const missed = getMemberMissedCount(m, d);
+    
+    if (dn === 5) {
+        sk = (ot === 5) ? "perfectDay" : "completed";
+        bc = (ot === 5) ? "badge-gold" : "badge-success";
+    } else if (missed >= 2 || (dn === 0 && isLateInDay(d))) {
+        sk = "needsAttention";
+        bc = "badge-danger";
+    } else if (dn > 0) {
+        sk = "inProgress";
+        bc = "badge-info";
+    }
     return { done: dn, onTime: ot, late: lt, percentage: pct, statusKey: sk, badgeClass: bc };
 }
 
