@@ -53,7 +53,7 @@ async function initApp() {
     localStorage.removeItem('askarFamilyPasswords');
 
     loadSettings();
-    loadRecords();
+    await fetchSharedRecords();
     applyDirection();
     applyTranslations();
 
@@ -193,7 +193,6 @@ function loadRecords() {
 }
 
 function saveToStorage() {
-    localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records));
     localStorage.setItem(CONFIG.settingsKey, JSON.stringify(appState.settings));
 }
 
@@ -328,7 +327,7 @@ function renderPrayerWindows() {
         if (cMin >= sMin && cMin < eMin) { sk = 'active'; bc = 'badge-success'; }
         else if (cMin >= eMin) {
             sk = 'missed', bc = 'badge-danger';
-            let d = 0; CONFIG.members.forEach(m => { if (appState.records[appState.currentDate]?.[m]?.[w.key.charAt(0).toUpperCase() + w.key.slice(1)]) d++; });
+            let d = 0; CONFIG.members.forEach(m => { if (getTodayRecordsFromSharedState(m)[w.key.charAt(0).toUpperCase() + w.key.slice(1)]) d++; });
             if (d === CONFIG.members.length) { sk = 'completed'; bc = 'badge-gold'; }
         }
         const i = document.createElement('div'); i.className = `timeline-item ${sk === 'active' ? 'active' : ''} graphical-timeline-card`;
@@ -338,9 +337,11 @@ function renderPrayerWindows() {
 }
 
 function renderFamilyProgress() {
-    const recs = appState.records[appState.currentDate] || {};
     let done = 0, onTime = 0, late = 0, total = CONFIG.members.length * 5;
-    CONFIG.members.forEach(m => { const mr = recs[m] || {}; Object.values(mr).forEach(r => { done++; if (r.status === 'On time') onTime++; else if (r.status === 'Late') late++; }); });
+    CONFIG.members.forEach(m => { 
+        const mr = getTodayRecordsFromSharedState(m); 
+        Object.values(mr).forEach(r => { done++; if (r.status === 'On time') onTime++; else if (r.status === 'Late') late++; }); 
+    });
     const pct = Math.round((done / total) * 100) || 0;
     const pctEl = document.getElementById('family-percentage'); if (pctEl) pctEl.textContent = `${pct}%`;
     const doneEl = document.getElementById('family-done-count'); if (doneEl) doneEl.textContent = done;
@@ -352,7 +353,7 @@ function renderFamilyProgress() {
 
 // --- Page Rendering ---
 function getLastActivity(m) {
-    const r = (appState.records[appState.currentDate] || {})[m] || {};
+    const r = getTodayRecordsFromSharedState(m);
     const keys = Object.keys(r);
     if (keys.length === 0) return null;
     let lastKey = null;
@@ -727,7 +728,7 @@ function renderSettings() {
     if (sheetUrlEl) sheetUrlEl.value = s.sheetUrl || '';
     if (sheetPasscodeEl) sheetPasscodeEl.value = s.sheetPasscode || '';
     
-    updateSyncStatus(s.sheetUrl ? 'success' : 'disconnected');
+    updateSyncStatus(s.sheetUrl ? (appState.lastSync ? 'success' : 'syncing') : 'disconnected');
 }
 
 // --- Modals ---
@@ -741,7 +742,7 @@ function openMemberModal(m) {
 
 function renderMemberChecklist(m) {
     const c = document.getElementById('member-prayer-list'); if (!c) return; c.innerHTML = '';
-    const recs = (appState.records[appState.currentDate] || {})[m] || {}, now = new Date(), nm = now.getHours() * 60 + now.getMinutes();
+    const recs = getTodayRecordsFromSharedState(m), now = new Date(), nm = now.getHours() * 60 + now.getMinutes();
     CONFIG.prayers.forEach(p => {
         const r = recs[p], pt = appState.prayerTimes[p], [ph, pm] = pt.split(':').map(Number), pmIn = ph * 60 + pm;
         let h = ''; 
@@ -768,40 +769,70 @@ function renderMemberChecklist(m) {
     });
 }
 
-function markPrayer(m, p) {
+async function markPrayer(m, p) {
     const now = new Date(), nm = now.getHours() * 60 + now.getMinutes(), pt = appState.prayerTimes[p];
     let em = 1440; const ni = CONFIG.prayers.indexOf(p) + 1; if (ni < CONFIG.prayers.length) { const [nh, nmm] = appState.prayerTimes[CONFIG.prayers[ni]].split(':').map(Number); em = nh * 60 + nmm; }
     const s = nm <= em ? 'On time' : 'Late';
-    if (!appState.records[appState.currentDate]) appState.records[appState.currentDate] = {}; if (!appState.records[appState.currentDate][m]) appState.records[appState.currentDate][m] = {};
     
     const record = { status: s, time: now.toLocaleTimeString([], { hour12: false }), timestamp: now.getTime() };
-    appState.records[appState.currentDate][m][p] = record;
     
-    saveToStorage(); showToast(`${m} ${t('messages.marked')} ${t('prayer.' + p.toLowerCase())} ${t('status.' + (s === 'On time' ? 'onTime' : s.toLowerCase()))}!`);
-    refreshUI(m);
-    
-    // Background cloud fetch/write
-    if (appState.settings.sheetUrl) {
-        saveRecordToCloud(appState.currentDate, m, p, record).then(() => {
-            updateSyncStatus('success');
-        });
+    const sheetUrl = appState.settings.sheetUrl;
+    if (!sheetUrl) {
+        console.warn("Using local fallback only if backend unavailable");
+        if (!appState.records[appState.currentDate]) appState.records[appState.currentDate] = {};
+        if (!appState.records[appState.currentDate][m]) appState.records[appState.currentDate][m] = {};
+        appState.records[appState.currentDate][m][p] = record;
+        localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records));
+        showToast(`${m} ${t('messages.marked')} ${t('prayer.' + p.toLowerCase())} ${t('status.' + (s === 'On time' ? 'onTime' : s.toLowerCase()))}! (Offline Mode)`);
+        refreshUI(m);
+        return;
     }
+    
+    updateSyncStatus('syncing');
+    showToast(t('settings.statusSyncing') || 'Syncing with Google Sheet...');
+    const success = await saveSharedPrayerRecord(appState.currentDate, m, p, record, 'save');
+    if (success) {
+        showToast(`${m} ${t('messages.marked')} ${t('prayer.' + p.toLowerCase())} ${t('status.' + (s === 'On time' ? 'onTime' : s.toLowerCase()))}!`);
+        await fetchSharedRecords();
+    } else {
+        console.warn("Using local fallback only if backend unavailable");
+        if (!appState.records[appState.currentDate]) appState.records[appState.currentDate] = {};
+        if (!appState.records[appState.currentDate][m]) appState.records[appState.currentDate][m] = {};
+        appState.records[appState.currentDate][m][p] = record;
+        localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records));
+        showToast(`${m} ${t('messages.marked')} ${t('prayer.' + p.toLowerCase())} (Local Fallback)!`, 'warning');
+    }
+    refreshUI(m);
 }
 
-function undoPrayer(m, p) {
-    if (appState.records[appState.currentDate]?.[m]?.[p]) {
-        delete appState.records[appState.currentDate][m][p];
-        saveToStorage();
+async function undoPrayer(m, p) {
+    const sheetUrl = appState.settings.sheetUrl;
+    if (!sheetUrl) {
+        console.warn("Using local fallback only if backend unavailable");
+        if (appState.records[appState.currentDate]?.[m]?.[p]) {
+            delete appState.records[appState.currentDate][m][p];
+            localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records));
+            showToast(`${t('family.undo')}: ${t('prayer.' + p.toLowerCase())} (Offline Mode)`);
+            refreshUI(m);
+        }
+        return;
+    }
+    
+    updateSyncStatus('syncing');
+    showToast(t('settings.statusSyncing') || 'Syncing with Google Sheet...');
+    const success = await saveSharedPrayerRecord(appState.currentDate, m, p, null, 'delete');
+    if (success) {
         showToast(`${t('family.undo')}: ${t('prayer.' + p.toLowerCase())}`);
-        refreshUI(m);
-        
-        // Background cloud delete
-        if (appState.settings.sheetUrl) {
-            deleteRecordFromCloud(appState.currentDate, m, p).then(() => {
-                updateSyncStatus('success');
-            });
+        await fetchSharedRecords();
+    } else {
+        console.warn("Using local fallback only if backend unavailable");
+        if (appState.records[appState.currentDate]?.[m]?.[p]) {
+            delete appState.records[appState.currentDate][m][p];
+            localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records));
+            showToast(`${t('family.undo')}: ${t('prayer.' + p.toLowerCase())} (Local Fallback)`, 'warning');
         }
     }
+    refreshUI(m);
 }
 
 function refreshUI(m) {
@@ -925,7 +956,7 @@ function attachEventListeners() {
                 // Cloud reset
                 if (appState.settings.sheetUrl) {
                     await resetCloudDatabase();
-                    updateSyncStatus('success');
+                    await fetchSharedRecords();
                 }
             } else {
                 clearError.textContent = t('settings.wrongPassword');
@@ -977,7 +1008,7 @@ function attachEventListeners() {
                 showToast(t('messages.settingsSaved') || 'Settings saved successfully.');
                 
                 if (appState.settings.sheetUrl) {
-                    await syncCloudDatabase();
+                    await fetchSharedRecords();
                 } else {
                     updateSyncStatus('disconnected');
                 }
@@ -989,14 +1020,14 @@ function attachEventListeners() {
     const desktopRefreshBtn = document.getElementById('desktop-refresh-btn');
     if (desktopRefreshBtn) {
         desktopRefreshBtn.onclick = async () => {
-            await syncCloudDatabase();
+            await fetchSharedRecords();
             showToast(t('settings.syncSuccess') || 'Successfully synchronized with Google Sheet');
         };
     }
     const mobileRefreshBtn = document.getElementById('mobile-refresh-btn');
     if (mobileRefreshBtn) {
         mobileRefreshBtn.onclick = async () => {
-            await syncCloudDatabase();
+            await fetchSharedRecords();
             showToast(t('settings.syncSuccess') || 'Successfully synchronized with Google Sheet');
         };
     }
@@ -1067,15 +1098,25 @@ function importJSON(e) {
 }
 
 // --- Google Sheets Sync Helpers ---
-async function syncCloudDatabase() {
-    if (!appState.settings.sheetUrl) {
+async function fetchSharedRecords() {
+    console.log("Fetching shared records");
+    
+    const sheetUrl = appState.settings.sheetUrl;
+    if (!sheetUrl) {
+        console.warn("Using local fallback only if backend unavailable");
         updateSyncStatus('disconnected');
+        
+        // Load local fallback
+        try {
+            const saved = localStorage.getItem(CONFIG.storageKey);
+            appState.records = saved ? JSON.parse(saved) : {};
+        } catch (e) { appState.records = {}; }
         return;
     }
     
     updateSyncStatus('syncing');
     try {
-        const url = new URL(appState.settings.sheetUrl);
+        const url = new URL(sheetUrl);
         url.searchParams.append('passcode', appState.settings.sheetPasscode);
         
         const response = await fetch(url.toString(), {
@@ -1089,17 +1130,92 @@ async function syncCloudDatabase() {
         const result = await response.json();
         if (result.status === 'success' && Array.isArray(result.data)) {
             appState.records = parseRecordsFromSheet(result.data);
+            // Save cache fallback copy
             localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records));
+            console.log("Shared records loaded");
+            
+            // Set last sync timestamp
+            appState.lastSync = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            
             updateSyncStatus('success');
-            renderAll();
         } else {
             throw new Error(result.message || 'Unknown server error');
         }
     } catch (err) {
         console.error("Cloud database sync failed:", err);
+        console.warn("Using local fallback only if backend unavailable");
         updateSyncStatus('error');
         showToast(t('settings.syncError') || 'Error syncing with cloud database', 'danger');
+        
+        // Load local fallback
+        try {
+            const saved = localStorage.getItem(CONFIG.storageKey);
+            appState.records = saved ? JSON.parse(saved) : {};
+        } catch (e) { appState.records = {}; }
     }
+}
+
+async function saveSharedPrayerRecord(date, member, prayer, record, action = 'save') {
+    const sheetUrl = appState.settings.sheetUrl;
+    if (!sheetUrl) {
+        console.warn("Using local fallback only if backend unavailable");
+        return false;
+    }
+    
+    console.log("Saving prayer record to shared sheet", { date, member, prayer, action });
+    const id = `${date}_${member}_${prayer}`;
+    const payload = {
+        action: action,
+        passcode: appState.settings.sheetPasscode,
+        id: id
+    };
+    
+    if (action === 'save') {
+        payload.record = {
+            id: id,
+            date: date,
+            member: member,
+            prayer: prayer,
+            status: record.status,
+            markedTime: record.time,
+            timestamp: record.timestamp,
+            note: record.note || ""
+        };
+    }
+    
+    try {
+        const response = await fetch(sheetUrl, {
+            method: 'POST',
+            mode: 'cors',
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8'
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        const result = await response.json();
+        if (result.status === 'success') {
+            console.log("Save success");
+            return true;
+        } else {
+            console.error("Save failed:", result.message);
+            console.warn("Using local fallback only if backend unavailable");
+            return false;
+        }
+    } catch (err) {
+        console.error("Save failed:", err);
+        console.warn("Using local fallback only if backend unavailable");
+        return false;
+    }
+}
+
+async function refreshSharedRecords() {
+    await fetchSharedRecords();
+    renderAll();
+}
+
+function getTodayRecordsFromSharedState(member) {
+    return (appState.records[appState.currentDate] || {})[member] || {};
 }
 
 function parseRecordsFromSheet(dataArray) {
@@ -1132,16 +1248,21 @@ function updateSyncStatus(status) {
     const desktopIndicator = document.getElementById('desktop-sync-indicator');
     
     const mobileSyncIcon = document.getElementById('mobile-sync-icon');
-    const mobileIndicator = document.getElementById('mobile-refresh-btn'); // Using the refresh button container
+    const mobileIndicator = document.getElementById('mobile-refresh-btn');
     
     const settingsBadge = document.getElementById('sync-status-badge');
+    const syncLastRow = document.getElementById('sync-last-time-row');
+    const syncLastTime = document.getElementById('sync-last-time');
     
     if (appState.settings.sheetUrl) {
         if (desktopIndicator) desktopIndicator.style.display = 'flex';
         if (mobileIndicator) mobileIndicator.style.display = 'flex';
+        if (syncLastRow) syncLastRow.style.display = 'flex';
+        if (syncLastTime) syncLastTime.textContent = appState.lastSync || '-';
     } else {
         if (desktopIndicator) desktopIndicator.style.display = 'none';
         if (mobileIndicator) mobileIndicator.style.display = 'none';
+        if (syncLastRow) syncLastRow.style.display = 'none';
         if (settingsBadge) {
             settingsBadge.className = 'badge';
             settingsBadge.textContent = t('settings.statusDisconnected') || 'Disconnected';
@@ -1176,7 +1297,7 @@ function updateSyncStatus(status) {
         }
         if (desktopSyncIcon) {
             desktopSyncIcon.className = 'fas fa-check-circle';
-            desktopSyncIcon.style.color = '#2e7d32'; // emerald green/success
+            desktopSyncIcon.style.color = '#2e7d32'; // emerald green
         }
         if (mobileSyncIcon) {
             mobileSyncIcon.className = 'fas fa-check-circle';
@@ -1207,77 +1328,6 @@ function updateSyncStatus(status) {
             settingsBadge.textContent = t('settings.statusError') || 'Sync Error';
             settingsBadge.setAttribute('data-i18n', 'settings.statusError');
         }
-    }
-}
-
-async function saveRecordToCloud(date, member, prayer, record) {
-    if (!appState.settings.sheetUrl) return;
-    
-    const id = `${date}_${member}_${prayer}`;
-    const payload = {
-        action: "save",
-        passcode: appState.settings.sheetPasscode,
-        record: {
-            id: id,
-            date: date,
-            member: member,
-            prayer: prayer,
-            status: record.status,
-            markedTime: record.time,
-            timestamp: record.timestamp,
-            note: record.note || ""
-        }
-    };
-    
-    try {
-        const response = await fetch(appState.settings.sheetUrl, {
-            method: 'POST',
-            mode: 'cors',
-            headers: {
-                'Content-Type': 'text/plain;charset=utf-8'
-            },
-            body: JSON.stringify(payload)
-        });
-        
-        const result = await response.json();
-        if (result.status !== 'success') {
-            throw new Error(result.message || 'Save failed');
-        }
-        console.log("Record synced to cloud successfully:", id);
-    } catch (err) {
-        console.error("Cloud save failed:", err);
-        showToast(t('settings.syncError') || 'Error syncing with cloud database', 'danger');
-    }
-}
-
-async function deleteRecordFromCloud(date, member, prayer) {
-    if (!appState.settings.sheetUrl) return;
-    
-    const id = `${date}_${member}_${prayer}`;
-    const payload = {
-        action: "delete",
-        passcode: appState.settings.sheetPasscode,
-        id: id
-    };
-    
-    try {
-        const response = await fetch(appState.settings.sheetUrl, {
-            method: 'POST',
-            mode: 'cors',
-            headers: {
-                'Content-Type': 'text/plain;charset=utf-8'
-            },
-            body: JSON.stringify(payload)
-        });
-        
-        const result = await response.json();
-        if (result.status !== 'success') {
-            throw new Error(result.message || 'Delete failed');
-        }
-        console.log("Record deleted from cloud successfully:", id);
-    } catch (err) {
-        console.error("Cloud delete failed:", err);
-        showToast(t('settings.syncError') || 'Error syncing with cloud database', 'danger');
     }
 }
 

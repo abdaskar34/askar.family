@@ -443,10 +443,15 @@
                                 <span class="input-helper" data-i18n="settings.sheetPasscodeHelper">Enter the passcode configured in your Google Apps Script.</span>
                             </div>
                             <button id="btn-save-sheet-settings" class="btn btn-action btn-green w-full" style="justify-content: center;"><i class="fas fa-save"></i> <span data-i18n="settings.saveConnection">Save & Connect</span></button>
-                            
-                            <div class="sync-status-box" style="margin-top: 1rem; padding: 0.75rem; border-radius: var(--radius-sm); background: var(--bg-color); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem;">
-                                <span style="color: var(--text-secondary);"><i class="fas fa-info-circle"></i> <span data-i18n="settings.statusLabel">Status:</span></span>
-                                <span id="sync-status-badge" class="badge" data-i18n="settings.statusDisconnected">Disconnected</span>
+                            <div class="sync-status-box" style="margin-top: 1rem; padding: 0.75rem; border-radius: var(--radius-sm); background: var(--bg-color); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                                    <span style="color: var(--text-secondary);"><i class="fas fa-info-circle"></i> <span data-i18n="settings.statusLabel">Status:</span></span>
+                                    <span id="sync-status-badge" class="badge" data-i18n="settings.statusDisconnected">Disconnected</span>
+                                </div>
+                                <div id="sync-last-time-row" style="display: none; align-items: center; justify-content: space-between; width: 100%; border-top: 1px solid var(--border-color); padding-top: 0.5rem;">
+                                    <span style="color: var(--text-secondary);" data-i18n="settings.lastSyncLabel">Last Sync:</span>
+                                    <span id="sync-last-time" style="color: var(--text-secondary); font-weight: 500;">-</span>
+                                </div>
                             </div>
                         </div>
                     </div>

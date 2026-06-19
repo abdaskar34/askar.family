@@ -164,7 +164,8 @@ const translations = {
             statusError: "Sync Error",
             syncSuccess: "Successfully synchronized with Google Sheet",
             syncError: "Error syncing with cloud database",
-            syncingText: "Syncing with Google Sheet..."
+            syncingText: "Syncing with Google Sheet...",
+            lastSyncLabel: "Last Sync:"
         },
         modals: {
             confirm: "Confirm",
@@ -352,7 +353,8 @@ const translations = {
             statusError: "Eşitleme Hatası",
             syncSuccess: "Google E-Tablo ile başarıyla eşitlendi",
             syncError: "Bulut veritabanıyla eşitlenirken hata oluştu",
-            syncingText: "Google E-Tablo ile eşitleniyor..."
+            syncingText: "Google E-Tablo ile eşitleniyor...",
+            lastSyncLabel: "Son Eşitleme:"
         },
         modals: {
             confirm: "Onayla",
@@ -540,7 +542,8 @@ const translations = {
             statusError: "خطأ في المزامنة",
             syncSuccess: "تمت المزامنة بنجاح مع جدول بيانات Google",
             syncError: "خطأ أثناء المزامنة مع قاعدة البيانات السحابية",
-            syncingText: "جاري المزامنة مع جدول بيانات Google..."
+            syncingText: "جاري المزامنة مع جدول بيانات Google...",
+            lastSyncLabel: "آخر مزامنة:"
         },
         modals: {
             confirm: "تأكيد",
