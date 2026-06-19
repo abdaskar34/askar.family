@@ -866,14 +866,42 @@ function attachEventListeners() {
     if (expJ) expJ.onclick = exportJSON;
     if (ec) ec.onclick = exportCSV;
     if (ij) ij.onchange = importJSON;
-    if (ra) ra.onclick = () => {
-        if (confirm(t('settings.areYouSure') + '\n\n' + t('messages.resetWarn'))) {
-            appState.records = {};
-            saveToStorage();
-            renderAll();
-            showToast(t('messages.resetDone'));
-        }
-    };
+    const clearModal = document.getElementById('clear-data-modal');
+    const clearInput = document.getElementById('clear-data-password-input');
+    const clearError = document.getElementById('clear-data-error-msg');
+    const clearConfirmBtn = document.getElementById('confirm-clear-data-btn');
+    
+    if (ra && clearModal && clearInput && clearError && clearConfirmBtn) {
+        ra.onclick = () => {
+            clearInput.value = '';
+            clearError.style.display = 'none';
+            clearError.textContent = '';
+            clearModal.classList.add('active');
+            clearInput.focus();
+        };
+        
+        const handleConfirm = () => {
+            if (clearInput.value === 'askar12345') {
+                appState.records = {};
+                saveToStorage();
+                renderAll();
+                showToast(t('messages.resetDone'));
+                clearModal.classList.remove('active');
+            } else {
+                clearError.textContent = t('settings.wrongPassword');
+                clearError.style.display = 'block';
+                clearInput.focus();
+            }
+        };
+        
+        clearConfirmBtn.onclick = handleConfirm;
+        
+        clearInput.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                handleConfirm();
+            }
+        };
+    }
     
     // Reset Preferences Button
     const rp = document.getElementById('btn-reset-preferences');

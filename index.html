@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Askar Family Prayer Tracker</title>
-    <link rel="stylesheet" href="style.css?v=22">
+    <link rel="stylesheet" href="style.css?v=23">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:wght@700&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
     <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="i18n.js?v=22" defer></script>
-    <script src="app.js?v=22" defer></script>
+    <script src="i18n.js?v=23" defer></script>
+    <script src="app.js?v=23" defer></script>
 </head>
 <body class="light-mode">
     <div class="app-shell">
@@ -479,6 +479,31 @@
                     <span data-i18n="family.honestyReminder">Honest confirmation before marking this prayer.</span>
                 </div>
                 <div class="prayer-checklist" id="member-prayer-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Clear Data Password Modal -->
+    <div id="clear-data-modal" class="modal">
+        <div class="modal-content small-modal">
+            <div class="modal-header">
+                <h3 data-i18n="settings.clearAllData">Clear All Data</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="text-align: center; margin-bottom: 1.25rem;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 2.5rem; color: var(--danger); margin-bottom: 0.75rem; display: block;"></i>
+                    <p style="font-weight: 600; color: var(--text-primary);" data-i18n="settings.warning">This action cannot be undone</p>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;" data-i18n="settings.enterPassToCont">Enter password to continue</p>
+                </div>
+                <div style="margin-bottom: 1.25rem;">
+                    <input type="password" id="clear-data-password-input" class="modern-input" data-i18n-placeholder="settings.password" placeholder="Password" style="width: 100%; text-align: center; font-size: 1.1rem; padding: 0.75rem;">
+                    <p id="clear-data-error-msg" class="danger-text" style="text-align: center; margin-top: 0.5rem; display: none; font-size: 0.85rem; font-weight: 600;"></p>
+                </div>
+                <div style="display: flex; gap: 0.75rem;">
+                    <button id="cancel-clear-data-btn" class="btn btn-outline w-full close-modal" data-i18n="settings.cancel">Cancel</button>
+                    <button id="confirm-clear-data-btn" class="btn btn-danger-solid w-full" data-i18n="settings.confirm">Confirm</button>
+                </div>
             </div>
         </div>
     </div>

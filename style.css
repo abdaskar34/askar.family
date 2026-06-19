@@ -1203,3 +1203,8 @@ html[dir="rtl"] .honesty-reminder-banner {
     font-size: 1.1rem;
     flex-shrink: 0;
 }
+
+/* Small Modal Specific Width */
+.modal-content.small-modal {
+    max-width: 400px;
+}

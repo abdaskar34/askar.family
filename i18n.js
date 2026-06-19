@@ -147,7 +147,10 @@ const translations = {
             emptyCity: "Please enter a city.",
             emptyCountry: "Please enter a country.",
             fallbackWarning: "Using fallback prayer times",
-            resetPreferences: "Reset Preferences"
+            resetPreferences: "Reset Preferences",
+            enterPassToCont: "Enter password to continue",
+            password: "Password",
+            wrongPassword: "Wrong password"
         },
         modals: {
             confirm: "Confirm",
@@ -165,7 +168,7 @@ const translations = {
             restored: "Backup restored successfully.",
             invalidBackup: "Invalid backup file.",
             resetWarn: "Are you sure you want to clear ALL prayer history? This cannot be undone.",
-            resetDone: "All data has been reset.",
+            resetDone: "All data has been cleared",
             mostMissed: "Most missed/late prayer is",
             highestRate: "has the highest on-time rate."
         }
@@ -318,7 +321,10 @@ const translations = {
             emptyCity: "Lütfen şehir girin.",
             emptyCountry: "Lütfen ülke girin.",
             fallbackWarning: "Yedek namaz vakitleri kullanılıyor",
-            resetPreferences: "Tercihleri Sıfırla"
+            resetPreferences: "Tercihleri Sıfırla",
+            enterPassToCont: "Devam etmek için şifreyi girin",
+            password: "Şifre",
+            wrongPassword: "Yanlış şifre"
         },
         modals: {
             confirm: "Onayla",
@@ -336,7 +342,7 @@ const translations = {
             restored: "Yedek başarıyla geri yüklendi.",
             invalidBackup: "Geçersiz yedek dosyası.",
             resetWarn: "Tüm namaz geçmişini silmek istediğinize emin misiniz? Bu işlem geri alınamaz.",
-            resetDone: "Tüm veriler sıfırlandı.",
+            resetDone: "Tüm veriler silindi",
             mostMissed: "En çok kaçırılan/geciken namaz:",
             highestRate: "en yüksek vaktinde kılma oranına sahip."
         }
@@ -489,7 +495,10 @@ const translations = {
             emptyCity: "يرجى إدخال المدينة.",
             emptyCountry: "يرجى إدخال البلد.",
             fallbackWarning: "يتم استخدام أوقات صلاة احتياطية",
-            resetPreferences: "إعادة ضبط التفضيلات"
+            resetPreferences: "إعادة ضبط التفضيلات",
+            enterPassToCont: "أدخل كلمة المرور للمتابعة",
+            password: "كلمة المرور",
+            wrongPassword: "كلمة المرور غير صحيحة"
         },
         modals: {
             confirm: "تأكيد",
@@ -507,7 +516,7 @@ const translations = {
             restored: "تم استعادة النسخة الاحتياطية.",
             invalidBackup: "ملف احتياطي غير صالح.",
             resetWarn: "هل أنت متأكد أنك تريد مسح كل السجلات؟ لا يمكن التراجع عن هذا الإجراء.",
-            resetDone: "تم مسح كل البيانات.",
+            resetDone: "تم مسح جميع البيانات",
             mostMissed: "أكثر صلاة متأخرة أو فائتة هي",
             highestRate: "لديه أعلى نسبة صلاة في الوقت."
         }
