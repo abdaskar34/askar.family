@@ -1179,7 +1179,9 @@ async function saveSharedPrayerRecord(date, member, prayer, record, action = 'sa
             status: record.status,
             markedTime: record.time,
             timestamp: record.timestamp,
-            note: record.note || ""
+            onTime: record.status === 'On time' ? 'Yes' : 'No',
+            note: record.note || "",
+            updatedAt: new Date().toISOString()
         };
     }
     
@@ -1375,7 +1377,9 @@ function convertNestedRecordsToFlat(recordsObj) {
                     status: record.status || "On time",
                     markedTime: record.time || "",
                     timestamp: record.timestamp || Date.now(),
-                    note: record.note || ""
+                    onTime: record.status === 'On time' ? 'Yes' : 'No',
+                    note: record.note || "",
+                    updatedAt: new Date().toISOString()
                 });
             });
         });

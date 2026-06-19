@@ -9,7 +9,7 @@ Follow these steps to connect your Askar Family Prayer Tracker to a shared Googl
 ### Step 1: Create a Google Spreadsheet
 1. Go to [Google Sheets](https://sheets.google.com) and create a new blank spreadsheet.
 2. Rename the spreadsheet to something like `Askar Family Prayer Tracker DB`.
-3. Set the first sheet (tab) name to **`Prayers`** (or leave it as the default first sheet).
+3. Set the first sheet (tab) name to **`PrayerRecords`** (This tab name must match exactly).
 4. Add the following column headers in the first row:
    * **Column A**: `id`
    * **Column B**: `date`
@@ -18,7 +18,9 @@ Follow these steps to connect your Askar Family Prayer Tracker to a shared Googl
    * **Column E**: `status`
    * **Column F**: `markedTime`
    * **Column G**: `timestamp`
-   * **Column H**: `note`
+   * **Column H**: `onTime`
+   * **Column I**: `note`
+   * **Column J**: `updatedAt`
 5. Make the first row bold so it is easy to read.
 
 ---
@@ -34,7 +36,7 @@ Follow these steps to connect your Askar Family Prayer Tracker to a shared Googl
 ```javascript
 // --- CONFIGURATION ---
 var PASSCODE = "askar12345"; // Match this passcode in your website Settings!
-var SHEET_NAME = "Prayers";   // Tab name in your spreadsheet
+var SHEET_NAME = "PrayerRecords"; // Tab name in your spreadsheet
 
 function doGet(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -200,7 +202,7 @@ function importRecords(sheet, records) {
 
 function initializeSheet(sheet) {
   sheet.clear();
-  var headers = ["id", "date", "member", "prayer", "status", "markedTime", "timestamp", "note"];
+  var headers = ["id", "date", "member", "prayer", "status", "markedTime", "timestamp", "onTime", "note", "updatedAt"];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
 }
