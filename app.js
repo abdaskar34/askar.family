@@ -36,6 +36,19 @@ const CONFIG = {
     ]
 };
 
+const firebaseConfig = {
+    apiKey: "AIzaSyC0fSOoH14GdY8xyZ2pjZvh1iYOB4GObyQ",
+    authDomain: "askar-family-prayer-tracker.firebaseapp.com",
+    databaseURL: "https://askar-family-prayer-tracker-default-rtdb.europe-west1.firebasedatabase.app/",
+    projectId: "askar-family-prayer-tracker",
+    storageBucket: "askar-family-prayer-tracker.appspot.com",
+    messagingSenderId: "37424564883",
+    appId: "1:37424564883:web:5de5d911b333798939c0bb",
+    measurementId: "G-J9C2D4J2J4"
+};
+
+let db = null;
+
 const appState = {
     language: "en",
     settings: {
@@ -52,18 +65,114 @@ const appState = {
     clockInterval: null,
     quranIndex: 0,
     charts: { overall: null, comparison: null, prayerPerformance: null, overallH: null, barH: null },
-    historyFilters: { start: '', end: '', member: 'all', prayer: 'all', status: 'all', search: '', view: 'timeline' }
+    historyFilters: { start: '', end: '', member: 'all', prayer: 'all', status: 'all', search: '', view: 'timeline' },
+    firebaseStatus: 'connecting',
+    firebaseErrorDetails: ''
 };
 
 // =============================================================================
+// FIREBASE CONNECTION HELPERS
+// =============================================================================
+
+function updateFirebaseStatusUI(status, details = '') {
+    appState.firebaseStatus = status;
+    appState.firebaseErrorDetails = details;
+
+    const dot = document.getElementById('firebase-status-dot');
+    const text = document.getElementById('firebase-status-text');
+    const detailRow = document.getElementById('firebase-detail-row');
+    if (!dot || !text) return;
+
+    if (status === 'connected') {
+        dot.style.background = '#4caf50'; // green
+        text.setAttribute('data-i18n', 'settings.firebaseConnected');
+        text.textContent = t('settings.firebaseConnected') || 'Firebase Connected';
+        if (detailRow) detailRow.style.display = 'flex';
+    } else if (status === 'syncing') {
+        dot.style.background = '#2196f3'; // blue
+        text.setAttribute('data-i18n', 'settings.firebaseSyncing');
+        text.textContent = t('settings.firebaseSyncing') || 'Syncing...';
+        if (detailRow) detailRow.style.display = 'flex';
+    } else if (status === 'error') {
+        dot.style.background = '#f44336'; // red
+        text.setAttribute('data-i18n', 'settings.firebaseError');
+        text.textContent = (t('settings.firebaseError') || 'Firebase connection error') + (details ? `: ${details}` : '');
+        if (detailRow) detailRow.style.display = 'none';
+    } else {
+        // connecting
+        dot.style.background = '#ffc107'; // amber
+        text.setAttribute('data-i18n', 'settings.firebaseConnecting');
+        text.textContent = t('settings.firebaseConnecting') || 'Connecting to Firebase...';
+        if (detailRow) detailRow.style.display = 'none';
+    }
+}
+
+function initFirebase() {
+    updateFirebaseStatusUI('connecting');
+    try {
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        db = firebase.database();
+
+        firebase.auth().signInAnonymously()
+            .then((userCredential) => {
+                console.log("[FIREBASE] Anonymous auth successful. UID:", userCredential.user.uid);
+                subscribeToFirebaseRecords();
+            })
+            .catch((error) => {
+                console.error("[FIREBASE] Anonymous auth failed:", error);
+                updateFirebaseStatusUI('error', error.message);
+            });
+    } catch (e) {
+        console.error("[FIREBASE] Initialization failed:", e);
+        updateFirebaseStatusUI('error', e.message);
+    }
+}
+
+function subscribeToFirebaseRecords() {
+    if (!db) return;
+    updateFirebaseStatusUI('syncing');
+
+    db.ref('records').on('value', (snapshot) => {
+        console.log("[FIREBASE] Data updated from server.");
+        const val = snapshot.val();
+        appState.records = val || {};
+        
+        // Cache locally for offline usage
+        try {
+            localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records));
+        } catch (e) {
+            console.error('[DataStore] Failed to cache records:', e);
+        }
+
+        updateFirebaseStatusUI('connected');
+
+        // Re-render UI dynamically
+        const modal = document.getElementById('member-modal');
+        const modalNameEl = document.getElementById('modal-member-name');
+        if (modal && modal.classList.contains('active') && modalNameEl) {
+            refreshUI(modalNameEl.textContent);
+        } else {
+            renderDashboard();
+            renderFamily();
+            renderHistory();
+            renderStats();
+        }
+    }, (error) => {
+        console.error("[FIREBASE] Subscription failed:", error);
+        updateFirebaseStatusUI('error', error.message);
+    });
+}
+
+// =============================================================================
 // DATASTORE ADAPTER
-// Temporary localStorage implementation.
-// Replace the internals here when you add a real backend — nothing else changes.
+// Firebase Realtime Database with local storage cache backup.
 // =============================================================================
 
 const DataStore = {
     /**
-     * Load all prayer records from localStorage into appState.records.
+     * Load all prayer records from localStorage cache into appState.records initially.
      */
     loadRecords() {
         try {
@@ -76,7 +185,7 @@ const DataStore = {
     },
 
     /**
-     * Persist appState.records to localStorage.
+     * Persist appState.records to localStorage cache.
      */
     _persist() {
         try {
@@ -97,6 +206,15 @@ const DataStore = {
         if (!appState.records[date]) appState.records[date] = {};
         if (!appState.records[date][member]) appState.records[date][member] = {};
         appState.records[date][member][prayer] = record;
+        
+        // Write to Firebase
+        if (db) {
+            db.ref(`records/${date}/${member}/${prayer}`).set(record)
+                .catch(error => {
+                    console.error('[DataStore] Firebase set failed:', error);
+                    showToast("Firebase write failed: " + error.message, "danger");
+                });
+        }
         this._persist();
     },
 
@@ -106,6 +224,15 @@ const DataStore = {
     deleteRecord(date, member, prayer) {
         if (appState.records[date]?.[member]?.[prayer]) {
             delete appState.records[date][member][prayer];
+            
+            // Remove from Firebase
+            if (db) {
+                db.ref(`records/${date}/${member}/${prayer}`).remove()
+                    .catch(error => {
+                        console.error('[DataStore] Firebase remove failed:', error);
+                        showToast("Firebase delete failed: " + error.message, "danger");
+                    });
+            }
             this._persist();
         }
     },
@@ -122,7 +249,16 @@ const DataStore = {
      */
     clearAll() {
         appState.records = {};
-        localStorage.removeItem(CONFIG.storageKey);
+        this._persist();
+
+        // Clear in Firebase
+        if (db) {
+            db.ref('records').remove()
+                .catch(error => {
+                    console.error('[DataStore] Firebase clear failed:', error);
+                    showToast("Firebase clear failed: " + error.message, "danger");
+                });
+        }
     },
 
     /**
@@ -131,6 +267,15 @@ const DataStore = {
     importRecords(newRecords) {
         appState.records = { ...appState.records, ...newRecords };
         this._persist();
+
+        // Set in Firebase
+        if (db) {
+            db.ref('records').set(appState.records)
+                .catch(error => {
+                    console.error('[DataStore] Firebase import failed:', error);
+                    showToast("Firebase import failed: " + error.message, "danger");
+                });
+        }
     }
 };
 
@@ -165,6 +310,7 @@ async function initApp() {
 
     loadSettings();
     DataStore.loadRecords();
+    initFirebase();
 
     applyDirection();
     applyTranslations();
@@ -721,6 +867,7 @@ function renderStats() {
 function renderSettings() {
     const dmEl = document.getElementById('setting-dark-mode');
     if (dmEl) dmEl.checked = !!appState.settings.darkMode;
+    updateFirebaseStatusUI(appState.firebaseStatus, appState.firebaseErrorDetails);
 }
 
 // =============================================================================

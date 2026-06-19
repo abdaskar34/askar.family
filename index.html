@@ -4,15 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Askar Family Prayer Tracker</title>
-    <link rel="stylesheet" href="style.css?v=32">
-    <link rel="stylesheet" href="Dock.css?v=32">
+    <link rel="stylesheet" href="style.css?v=33">
+    <link rel="stylesheet" href="Dock.css?v=33">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:wght@700&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
     <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="i18n.js?v=32" defer></script>
-    <script src="Dock.js?v=32" defer></script>
-    <script src="app.js?v=32" defer></script>
+    <script src="i18n.js?v=33" defer></script>
+    <script src="Dock.js?v=33" defer></script>
+    <!-- Firebase v10 Compat SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+    <script src="app.js?v=33" defer></script>
 </head>
 <body class="light-mode">
     <!-- Iridescence Background Layer -->
@@ -413,7 +417,27 @@
                         </div>
                     </div>
 
-                    <!-- Data Management Card -->
+                    <!-- Firebase Live Database Status Card -->
+                    <div class="card modern-settings-card">
+                        <div class="card-header-icon">
+                            <div class="icon-circle" style="background: linear-gradient(135deg, #f5820d, #ffca28);"><i class="fas fa-fire" style="color:#fff;"></i></div>
+                            <h3 class="card-title" data-i18n="settings.firebaseTitle">Live Database</h3>
+                        </div>
+                        <div class="settings-form">
+                            <div id="firebase-status-box" style="padding: 0.75rem 1rem; border-radius: var(--radius-sm); background: var(--bg-color); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 0.6rem; font-size: 0.85rem;">
+                                <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                    <span id="firebase-status-dot" style="width: 10px; height: 10px; border-radius: 50%; background: #aaa; flex-shrink: 0; transition: background 0.3s;"></span>
+                                    <span id="firebase-status-text" data-i18n="settings.firebaseConnecting" style="font-weight: 500;">Connecting to Firebase...</span>
+                                </div>
+                                <div id="firebase-detail-row" style="display: none; flex-direction: column; gap: 0.3rem; border-top: 1px solid var(--border-color); padding-top: 0.5rem; color: var(--text-secondary);">
+                                    <div style="display: flex; align-items: center; gap: 0.5rem;"><i class="fas fa-user-secret" style="width: 14px;"></i> <span id="firebase-anon-text" data-i18n="settings.firebaseAnon">Anonymous user active</span></div>
+                                    <div style="display: flex; align-items: center; gap: 0.5rem;"><i class="fas fa-bolt" style="width: 14px;"></i> <span id="firebase-live-text" data-i18n="settings.firebaseLive">Live sync active</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+
                     <div class="card modern-settings-card">
                         <div class="card-header-icon">
                             <div class="icon-circle"><i class="fas fa-database"></i></div>
