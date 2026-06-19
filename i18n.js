@@ -142,9 +142,6 @@ const translations = {
             resetPreferences: "Reset Preferences"
         },
         modals: {
-            verify: "Verify Identity",
-            enterPass: "Enter password for",
-            password: "Password",
             confirm: "Confirm",
             upcoming: "Upcoming",
             markDone: "Mark Done",
@@ -154,7 +151,6 @@ const translations = {
         },
         messages: {
             settingsSaved: "Settings saved successfully.",
-            incorrectPass: "Incorrect password.",
             marked: "marked",
             dayRefreshed: "Day refreshed. Assalamu Alaikum!",
             fallback: "Could not load prayer times for this location. Using fallback times.",
@@ -199,7 +195,7 @@ const translations = {
         family: {
             title: "Aile Üyeleri",
             subtitle: "Bireysel ilerlemeyi ve serileri takip edin",
-            markAsPrayed: "Kılındı İşaretle",
+            markAsPrayed: "Kılındı Olarak İşaretle",
             prayerDetails: "Namaz Detayları",
             streak: "Seri",
             perfectDay: "Mükemmel Gün",
@@ -309,9 +305,6 @@ const translations = {
             resetPreferences: "Tercihleri Sıfırla"
         },
         modals: {
-            verify: "Kimliği Doğrula",
-            enterPass: "Şifrenizi girin:",
-            password: "Şifre",
             confirm: "Onayla",
             upcoming: "Yaklaşan",
             markDone: "Kılındı İşaretle",
@@ -321,7 +314,6 @@ const translations = {
         },
         messages: {
             settingsSaved: "Ayarlar başarıyla kaydedildi.",
-            incorrectPass: "Hatalı şifre.",
             marked: "olarak işaretlendi:",
             dayRefreshed: "Gün yenilendi. Selamün Aleyküm!",
             fallback: "Bu konum için namaz vakitleri yüklenemedi. Yerel yedek vakitler kullanılıyor.",
@@ -366,7 +358,7 @@ const translations = {
         family: {
             title: "أفراد العائلة",
             subtitle: "تتبع تقدم الأفراد والمواظبة",
-            markAsPrayed: "تحديد كمصلى",
+            markAsPrayed: "تمت الصلاة",
             prayerDetails: "تفاصيل الصلاة",
             streak: "المواظبة",
             perfectDay: "يوم مثالي",
@@ -476,9 +468,6 @@ const translations = {
             resetPreferences: "إعادة ضبط التفضيلات"
         },
         modals: {
-            verify: "التحقق من الهوية",
-            enterPass: "أدخل كلمة المرور لـ",
-            password: "كلمة المرور",
             confirm: "تأكيد",
             upcoming: "قادمة",
             markDone: "تمت",
@@ -488,7 +477,6 @@ const translations = {
         },
         messages: {
             settingsSaved: "تم حفظ الإعدادات بنجاح.",
-            incorrectPass: "كلمة المرور خاطئة.",
             marked: "سجل",
             dayRefreshed: "يوم جديد. السلام عليكم!",
             fallback: "تعذر تحميل أوقات الصلاة لهذا الموقع. استخدام أوقات محلية احتياطية.",

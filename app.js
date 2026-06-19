@@ -47,6 +47,8 @@ async function initApp() {
 
     // Clean old password keys from localStorage
     localStorage.removeItem('askar_passwords');
+    localStorage.removeItem('askar_password');
+    localStorage.removeItem('askarFamilyPasswords');
 
     loadSettings();
     loadRecords();
@@ -585,7 +587,7 @@ function renderMemberChecklist(m) {
         if (r) {
             h = `
                 <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem;">
-                    <span class="badge ${getStatusBadgeClass(r.status)}">${t('status.marked')} (${t('status.' + (r.status === 'On time' ? 'onTime' : r.status.toLowerCase()))}) &middot; ${r.time}</span>
+                    <span class="badge ${getStatusBadgeClass(r.status)}">${t('status.marked')} &middot; ${r.time}</span>
                     <button class="btn btn-ghost btn-sm" onclick="undoPrayer('${m}', '${p}')" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;">
                         <i class="fas fa-undo"></i> ${t('family.undo')}
                     </button>
@@ -593,7 +595,12 @@ function renderMemberChecklist(m) {
             `;
         }
         else if (nm < pmIn) h = `<button class="btn btn-ghost text-muted" disabled>${t('modals.upcoming')}</button>`;
-        else h = `<button class="btn btn-primary btn-sm" onclick="markPrayer('${m}', '${p}')">${t('modals.markDone')}</button>`;
+        else h = `
+            <div class="prayer-action-container" style="display: flex; align-items: center; gap: 0.75rem;">
+                <span class="arabic-pledge-badge">والله صليت</span>
+                <button class="btn btn-primary btn-sm" onclick="markPrayer('${m}', '${p}')">${t('family.markAsPrayed')}</button>
+            </div>
+        `;
         const div = document.createElement('div'); div.className = `prayer-row ${r ? 'completed' : ''}`;
         div.innerHTML = `<div class="prayer-meta"><span class="p-name">${t('prayer.' + p.toLowerCase())}</span><span class="p-window">${t('modals.startsAt')} ${pt}</span></div><div class="prayer-action">${h}</div>`;
         c.appendChild(div);

@@ -843,3 +843,45 @@ body.page-settings .desktop-header .lang-switcher {
         grid-template-columns: 1fr !important;
     }
 }
+
+/* Elegant Arabic Pledge Badge */
+.arabic-pledge-badge {
+    font-family: 'Amiri', serif;
+    font-size: clamp(0.75rem, 3vw, 0.95rem);
+    color: var(--accent-color);
+    background: rgba(212, 175, 55, 0.1);
+    padding: 0.25rem 0.6rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(212, 175, 55, 0.3);
+    font-weight: 700;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    direction: rtl !important;
+}
+
+/* Ensure flex wrap on mobile modal checklist rows */
+@media (max-width: 480px) {
+    .prayer-row {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 0.75rem !important;
+        text-align: center !important;
+    }
+    
+    .prayer-row .prayer-meta {
+        text-align: center !important;
+    }
+    
+    .prayer-row .prayer-action {
+        display: flex;
+        justify-content: center;
+        width: 100%;
+    }
+    
+    .prayer-action-container {
+        width: 100%;
+        justify-content: space-between !important;
+    }
+}
