@@ -1173,3 +1173,80 @@ html[dir="rtl"] .honesty-reminder-banner {
 .modal-content.small-modal {
     max-width: 400px;
 }
+
+/* Iridescence Background Layer */
+.iridescence-bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: -10;
+    pointer-events: none;
+    overflow: hidden;
+    background-color: var(--bg-color);
+    transition: background-color 0.5s ease;
+}
+
+.iridescence-bg-layer1,
+.iridescence-bg-layer2 {
+    position: absolute;
+    width: 160%;
+    height: 160%;
+    top: -30%;
+    left: -30%;
+    pointer-events: none;
+}
+
+.iridescence-bg-layer1 {
+    background: 
+        radial-gradient(circle at 10% 20%, rgba(46, 125, 50, 0.05) 0%, transparent 45%),
+        radial-gradient(circle at 90% 10%, rgba(212, 175, 55, 0.04) 0%, transparent 40%),
+        radial-gradient(circle at 50% 80%, rgba(27, 67, 50, 0.03) 0%, transparent 50%),
+        radial-gradient(circle at 80% 90%, rgba(212, 175, 55, 0.03) 0%, transparent 45%);
+    animation: iridescenceMotion1 45s infinite ease-in-out;
+}
+
+.iridescence-bg-layer2 {
+    background: 
+        radial-gradient(circle at 85% 15%, rgba(46, 125, 50, 0.03) 0%, transparent 50%),
+        radial-gradient(circle at 20% 75%, rgba(212, 175, 55, 0.04) 0%, transparent 45%),
+        radial-gradient(circle at 60% 30%, rgba(27, 67, 50, 0.04) 0%, transparent 50%);
+    animation: iridescenceMotion2 55s infinite ease-in-out;
+}
+
+/* Dark mode variations for subtle contrast */
+body.dark-mode .iridescence-bg-layer1 {
+    background: 
+        radial-gradient(circle at 15% 20%, rgba(46, 125, 50, 0.1) 0%, transparent 45%),
+        radial-gradient(circle at 85% 15%, rgba(212, 175, 55, 0.06) 0%, transparent 40%),
+        radial-gradient(circle at 50% 80%, rgba(5, 20, 15, 0.4) 0%, transparent 50%),
+        radial-gradient(circle at 80% 90%, rgba(212, 175, 55, 0.04) 0%, transparent 45%);
+}
+
+body.dark-mode .iridescence-bg-layer2 {
+    background: 
+        radial-gradient(circle at 80% 20%, rgba(46, 125, 50, 0.06) 0%, transparent 50%),
+        radial-gradient(circle at 25% 75%, rgba(212, 175, 55, 0.06) 0%, transparent 45%),
+        radial-gradient(circle at 65% 35%, rgba(5, 20, 15, 0.3) 0%, transparent 50%);
+}
+
+@keyframes iridescenceMotion1 {
+    0% { transform: translate(0, 0) rotate(0deg) scale(1); }
+    33% { transform: translate(4%, 3%) rotate(2deg) scale(1.03); }
+    66% { transform: translate(-3%, 5%) rotate(-2deg) scale(0.97); }
+    100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+}
+
+@keyframes iridescenceMotion2 {
+    0% { transform: translate(0, 0) rotate(0deg) scale(1); }
+    50% { transform: translate(-5%, -4%) rotate(-4deg) scale(1.05); }
+    100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .iridescence-bg-layer1,
+    .iridescence-bg-layer2 {
+        animation: none !important;
+    }
+}
