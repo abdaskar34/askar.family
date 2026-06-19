@@ -4,15 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Askar Family Prayer Tracker</title>
-    <link rel="stylesheet" href="style.css?v=31">
-    <link rel="stylesheet" href="Dock.css?v=31">
+    <link rel="stylesheet" href="style.css?v=32">
+    <link rel="stylesheet" href="Dock.css?v=32">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:wght@700&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
     <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="i18n.js?v=31" defer></script>
-    <script src="Dock.js?v=31" defer></script>
-    <script src="app.js?v=31" defer></script>
+    <script src="i18n.js?v=32" defer></script>
+    <script src="Dock.js?v=32" defer></script>
+    <script src="app.js?v=32" defer></script>
 </head>
 <body class="light-mode">
     <!-- Iridescence Background Layer -->
@@ -55,11 +55,7 @@
         <main class="main-content">
             <!-- Desktop Header for Language Switcher -->
             <header class="desktop-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-                <div class="db-sync-indicator" id="desktop-sync-indicator" style="display: none; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-secondary);">
-                    <i class="fas fa-sync-alt" id="desktop-sync-icon"></i>
-                    <span id="desktop-sync-text" data-i18n="settings.statusDisconnected">Disconnected</span>
-                    <button id="desktop-refresh-btn" class="btn-icon-small" title="Sync Now"><i class="fas fa-redo-alt"></i></button>
-                </div>
+
                 <div class="lang-switcher">
                     <button class="lang-btn active" data-lang="en">EN</button>
                     <button class="lang-btn" data-lang="tr">TR</button>
@@ -74,15 +70,13 @@
                         <i class="fas fa-moon"></i>
                         <span>Askar Family</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <button id="mobile-refresh-btn" class="btn-icon-small" title="Sync Now" style="display: none; width: 32px; height: 32px; font-size: 0.9rem; color: var(--accent-color); border: 1px solid rgba(255,255,255,0.1); border-radius: 50%; justify-content: center; align-items: center;"><i class="fas fa-sync-alt" id="mobile-sync-icon"></i></button>
-                        <div class="lang-switcher mobile-lang">
-                            <button class="lang-btn active" data-lang="en">EN</button>
-                            <button class="lang-btn" data-lang="tr">TR</button>
-                            <button class="lang-btn" data-lang="ar">AR</button>
-                        </div>
+                    <div class="lang-switcher mobile-lang">
+                        <button class="lang-btn active" data-lang="en">EN</button>
+                        <button class="lang-btn" data-lang="tr">TR</button>
+                        <button class="lang-btn" data-lang="ar">AR</button>
                     </div>
                 </div>
+
                 <div class="mobile-header-bottom">
                     <div id="mobile-time">00:00</div>
                     <div class="mobile-date-group">
@@ -415,43 +409,6 @@
                                     <input type="checkbox" id="setting-dark-mode">
                                     <span class="slider round"></span>
                                 </label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Shared Cloud Database Card -->
-                    <div class="card modern-settings-card">
-                        <div class="card-header-icon">
-                            <div class="icon-circle"><i class="fas fa-cloud"></i></div>
-                            <h3 class="card-title" data-i18n="settings.cloudDatabase">Shared Cloud Database</h3>
-                        </div>
-                        <div class="settings-form">
-                            <div class="modern-input-group">
-                                <label for="setting-sheet-url" data-i18n="settings.sheetUrlLabel">Google Sheets API URL</label>
-                                <div class="input-icon-wrapper">
-                                    <i class="fas fa-link"></i>
-                                    <input type="url" id="setting-sheet-url" class="modern-input" placeholder="https://script.google.com/macros/s/.../exec">
-                                </div>
-                                <span class="input-helper" data-i18n="settings.sheetUrlHelper">Paste your deployed Google Apps Script Web App URL.</span>
-                            </div>
-                            <div class="modern-input-group">
-                                <label for="setting-sheet-passcode" data-i18n="settings.sheetPasscodeLabel">API Passcode</label>
-                                <div class="input-icon-wrapper">
-                                    <i class="fas fa-key"></i>
-                                    <input type="password" id="setting-sheet-passcode" class="modern-input" placeholder="e.g. askar12345">
-                                </div>
-                                <span class="input-helper" data-i18n="settings.sheetPasscodeHelper">Enter the passcode configured in your Google Apps Script.</span>
-                            </div>
-                            <button id="btn-save-sheet-settings" class="btn btn-action btn-green w-full" style="justify-content: center;"><i class="fas fa-save"></i> <span data-i18n="settings.saveConnection">Save & Connect</span></button>
-                            <div class="sync-status-box" style="margin-top: 1rem; padding: 0.75rem; border-radius: var(--radius-sm); background: var(--bg-color); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem;">
-                                <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-                                    <span style="color: var(--text-secondary);"><i class="fas fa-info-circle"></i> <span data-i18n="settings.statusLabel">Status:</span></span>
-                                    <span id="sync-status-badge" class="badge" data-i18n="settings.statusDisconnected">Disconnected</span>
-                                </div>
-                                <div id="sync-last-time-row" style="display: none; align-items: center; justify-content: space-between; width: 100%; border-top: 1px solid var(--border-color); padding-top: 0.5rem;">
-                                    <span style="color: var(--text-secondary);" data-i18n="settings.lastSyncLabel">Last Sync:</span>
-                                    <span id="sync-last-time" style="color: var(--text-secondary); font-weight: 500;">-</span>
-                                </div>
                             </div>
                         </div>
                     </div>

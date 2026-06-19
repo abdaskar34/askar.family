@@ -1,16 +1,28 @@
 /**
  * Askar Family Prayer Tracker - Core Application Logic
- * Version: 3.0 (Shared Google Sheets Backend - Final)
+ * Version: 4.0 (Clean Local DataStore - No Google Sheets)
  *
  * Data flow:
- *  1. On load: read API URL/token from localStorage settings.
- *  2. Run healthCheck (GET to Apps Script).
- *  3. If connected: fetch all records from Google Sheets → appState.records.
- *  4. All pages (Dashboard, Family, History, Statistics) read from appState.records.
- *  5. On prayer mark/undo: POST to Apps Script → refetch → re-render.
- *  6. localStorage is ONLY used for: language, theme, API URL/token, UI prefs.
- *     localStorage is NEVER the source of truth for prayer records.
+ *  1. On load: DataStore.loadRecords() reads from localStorage.
+ *  2. appState.records is the in-memory source of truth.
+ *  3. On prayer mark/undo: DataStore.saveRecord() / DataStore.deleteRecord()
+ *     persists to localStorage and updates appState.records.
+ *  4. All pages read from appState.records.
+ *
+ * DataStore adapter (Option B):
+ *  When a new backend is ready, replace the localStorage implementation
+ *  inside DataStore with API calls — no other code needs to change.
+ *
+ * localStorage keys used:
+ *  - askar_v2_prayer_data   : prayer records (source of truth)
+ *  - askar_v2_settings_data : theme, language, UI prefs
+ *  - askarFamilyLanguage     : selected language
+ *  - askarFamilyCurrentPage  : last visited page
  */
+
+// =============================================================================
+// CONFIGURATION
+// =============================================================================
 
 const CONFIG = {
     members: ['Abdulla', 'Dana', 'Mohammed', 'Iman', 'Rahma', 'Ghofra'],
@@ -18,18 +30,16 @@ const CONFIG = {
     storageKey: 'askar_v2_prayer_data',
     settingsKey: 'askar_v2_settings_data',
     quranSlides: [
-        { text: "مَا سَلَكَكُمْ فِي سَقَرَ ۝ قَالُوا لَمْ نَكُ مِنَ الْمُصَلِّينَ", source: "سورة المدثر 42–43" },
-        { text: "وَالَّذِينَ هُمْ عَلَى صَلَواتِهِمْ يُحَافِظُونَ ۝ أُولَئِكَ هُمُ الْوَارِثُونَ ۝ الَّذِينَ يَرِثُونَ الْفِرْدَوْسَ هُمْ فِيهَا خَالِدُونَ", source: "سورة المؤمنون 9–11" },
-        { text: "وَتُوبُوا إِلَى اللَّهِ جَمِيعًا أَيُّهَ الْمُؤْمِنُونَ لَعَلَّكُمْ تُفْلِحُونَ", source: "سورة النور 31" }
+        { text: "مَا سَلَكَكُمْ فِي سَقَرَ ۝ قَالُوا لَمْ نَكُ مِنَ الْمُصَلِّينَ", source: "سورة المدثر 42–43" },
+        { text: "وَالَّذِينَ هُمْ عَلَى صَلَواتِهِمْ يُحَافِظُونَ ۝ أُولَئِكَ هُمُ الْوَارِثُونَ ۝ الَّذِينَ يَرِثُونَ الْفِرْدَوْسَ هُمْ فِيهَا خَالِدُونَ", source: "سورة المؤمنون 9–11" },
+        { text: "وَتُوبُوا إِلَى اللَّهِ جَمِيعًا أَيُّهَ الْمُؤْمِنُونَ لَعَلَّكُمْ تُفْلِحُونَ", source: "سورة النور 31" }
     ]
 };
 
 const appState = {
     language: "en",
     settings: {
-        darkMode: false,
-        sheetUrl: "",
-        sheetPasscode: ""
+        darkMode: false
     },
     prayerTimes: null,
     prayerTimeSource: "default",
@@ -45,7 +55,89 @@ const appState = {
     historyFilters: { start: '', end: '', member: 'all', prayer: 'all', status: 'all', search: '', view: 'timeline' }
 };
 
-// --- App Initialization ---
+// =============================================================================
+// DATASTORE ADAPTER
+// Temporary localStorage implementation.
+// Replace the internals here when you add a real backend — nothing else changes.
+// =============================================================================
+
+const DataStore = {
+    /**
+     * Load all prayer records from localStorage into appState.records.
+     */
+    loadRecords() {
+        try {
+            const saved = localStorage.getItem(CONFIG.storageKey);
+            appState.records = saved ? JSON.parse(saved) : {};
+        } catch (e) {
+            console.error('[DataStore] Failed to load records:', e);
+            appState.records = {};
+        }
+    },
+
+    /**
+     * Persist appState.records to localStorage.
+     */
+    _persist() {
+        try {
+            localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records));
+        } catch (e) {
+            console.error('[DataStore] Failed to persist records:', e);
+        }
+    },
+
+    /**
+     * Save or update a single prayer record.
+     * @param {string} date   - 'YYYY-MM-DD'
+     * @param {string} member - member name
+     * @param {string} prayer - prayer name
+     * @param {object} record - { status, time, timestamp }
+     */
+    saveRecord(date, member, prayer, record) {
+        if (!appState.records[date]) appState.records[date] = {};
+        if (!appState.records[date][member]) appState.records[date][member] = {};
+        appState.records[date][member][prayer] = record;
+        this._persist();
+    },
+
+    /**
+     * Delete a single prayer record.
+     */
+    deleteRecord(date, member, prayer) {
+        if (appState.records[date]?.[member]?.[prayer]) {
+            delete appState.records[date][member][prayer];
+            this._persist();
+        }
+    },
+
+    /**
+     * Return today's records for a given member.
+     */
+    getTodayRecords(member) {
+        return (appState.records[appState.currentDate] || {})[member] || {};
+    },
+
+    /**
+     * Clear all prayer records.
+     */
+    clearAll() {
+        appState.records = {};
+        localStorage.removeItem(CONFIG.storageKey);
+    },
+
+    /**
+     * Import records (merges with existing).
+     */
+    importRecords(newRecords) {
+        appState.records = { ...appState.records, ...newRecords };
+        this._persist();
+    }
+};
+
+// =============================================================================
+// APP INITIALIZATION
+// =============================================================================
+
 document.addEventListener("DOMContentLoaded", () => {
     initApp().catch(error => {
         console.error("App initialization failed:", error);
@@ -56,13 +148,23 @@ document.addEventListener("DOMContentLoaded", () => {
 async function initApp() {
     console.log("[INIT] App starting...");
 
-    // Clean old password keys from localStorage
+    // Clean up old/obsolete localStorage keys from previous backend attempts
     localStorage.removeItem('askar_passwords');
     localStorage.removeItem('askar_password');
     localStorage.removeItem('askarFamilyPasswords');
+    // Remove old Google Sheets keys if they exist
+    const settingsRaw = localStorage.getItem(CONFIG.settingsKey);
+    if (settingsRaw) {
+        try {
+            const parsed = JSON.parse(settingsRaw);
+            delete parsed.sheetUrl;
+            delete parsed.sheetPasscode;
+            localStorage.setItem(CONFIG.settingsKey, JSON.stringify(parsed));
+        } catch (e) { /* ignore */ }
+    }
 
     loadSettings();
-    console.log("[INIT] Settings loaded. API URL:", appState.settings.sheetUrl ? appState.settings.sheetUrl.substring(0, 60) + '...' : '(not set)');
+    DataStore.loadRecords();
 
     applyDirection();
     applyTranslations();
@@ -71,58 +173,42 @@ async function initApp() {
     initHistoryFilters();
     setupTheme();
 
-    // UI independent of API
+    // UI independent of data
     renderQuranBanner();
     startQuranCarousel();
     startSidebarClock();
     renderDashboardLoadingState();
 
-    // Data Load from shared backend (no localStorage prayer data)
-    await fetchSharedRecords(true); // true = initial load, renders after
-
-    // Prayer times (local calculation)
+    // Prayer times (local calculation, no network)
     await loadPrayerTimesSafe();
-
-    // Initial State Calculation
     calculateNextPrayer();
 
-    // Routing Setup
+    // Routing
     setupNavigation();
-
     const savedPage = window.location.hash.replace("#", "") || localStorage.getItem("askarFamilyCurrentPage") || "dashboard";
     navigateTo(savedPage);
 
-    // Initialize Floating Dock Navigation
     initializeDock();
 
-    // Intervals
     startNextPrayerCountdown();
     setInterval(checkDayReset, 60000);
-
-    // Auto-sync every 15 seconds if backend is connected
-    // Renders all pages after each sync so all family members see live data
-    setInterval(async () => {
-        if (appState.settings.sheetUrl && !appState.isSaving) {
-            console.log("[AUTO-SYNC] Running background sync...");
-            await fetchSharedRecords(true); // true = always render after
-        }
-    }, 15000);
 
     attachEventListeners();
 
     console.log("[INIT] App ready.");
 }
 
+// =============================================================================
+// NAVIGATION
+// =============================================================================
+
 function setupNavigation() {
-    const navItems = document.querySelectorAll("[data-page]");
-    navItems.forEach(item => {
+    document.querySelectorAll("[data-page]").forEach(item => {
         item.addEventListener("click", (e) => {
             e.preventDefault();
-            const page = item.dataset.page;
-            navigateTo(page);
+            navigateTo(item.dataset.page);
         });
     });
-
     window.addEventListener("hashchange", () => {
         const page = window.location.hash.replace("#", "") || "dashboard";
         if (appState.currentPage !== page) navigateTo(page);
@@ -130,19 +216,11 @@ function setupNavigation() {
 }
 
 function navigateTo(page) {
-    console.log("Navigating to:", page);
     appState.currentPage = page;
     localStorage.setItem("askarFamilyCurrentPage", page);
-    
-    // Update body class for page-specific CSS overrides
     document.body.className = document.body.className.replace(/\bpage-\S+/g, '');
     document.body.classList.add(`page-${page}`);
-
-    // Update URL Hash
-    if (window.location.hash !== "#" + page) {
-        window.location.hash = page;
-    }
-
+    if (window.location.hash !== "#" + page) window.location.hash = page;
     updateActiveNav(page);
     renderPage(page);
 }
@@ -154,32 +232,53 @@ function updateActiveNav(page) {
 }
 
 function renderPage(page) {
-    // Hide all pages
     document.querySelectorAll(".view-container").forEach(view => {
         view.classList.remove("active");
         view.style.display = "none";
     });
-
-    // Show target page
     const target = document.getElementById(`view-${page}`);
     if (target) {
         target.classList.add("active");
         target.style.display = "block";
-        console.log("Rendering page:", page);
     } else {
-        console.error("Missing view container for page:", page);
         if (page !== 'dashboard') navigateTo('dashboard');
         return;
     }
-
-    // Page-specific triggers
     switch (page) {
-        case "dashboard": renderDashboard(); break;
-        case "family": renderFamily(); break;
-        case "history": renderHistory(); break;
+        case "dashboard":  renderDashboard(); break;
+        case "family":     renderFamily(); break;
+        case "history":    renderHistory(); break;
         case "statistics": renderStats(); break;
-        case "settings": renderSettings(); break;
+        case "settings":   renderSettings(); break;
     }
+}
+
+// =============================================================================
+// PERSISTENCE (settings only — records go through DataStore)
+// =============================================================================
+
+function loadSettings() {
+    try {
+        const saved = localStorage.getItem(CONFIG.settingsKey);
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            // Strip any old Google Sheets keys
+            delete parsed.sheetUrl;
+            delete parsed.sheetPasscode;
+            appState.settings = { ...appState.settings, ...parsed };
+        }
+        appState.language = localStorage.getItem('askarFamilyLanguage') || 'en';
+    } catch (e) { console.error("[SETTINGS] Parse error:", e); }
+}
+
+function saveSettings() {
+    const clean = { darkMode: appState.settings.darkMode };
+    localStorage.setItem(CONFIG.settingsKey, JSON.stringify(clean));
+}
+
+function setupTheme() {
+    document.body.classList.toggle('dark-mode', appState.settings.darkMode);
+    document.body.classList.toggle('light-mode', !appState.settings.darkMode);
 }
 
 function applyDirection() {
@@ -193,39 +292,10 @@ function forceRenderFallbackDashboard() {
     renderPage("dashboard");
 }
 
-// --- Persistence ---
-function loadSettings() {
-    try {
-        const saved = localStorage.getItem(CONFIG.settingsKey);
-        if (saved) appState.settings = { ...appState.settings, ...JSON.parse(saved) };
-        appState.language = localStorage.getItem('askarFamilyLanguage') || 'en';
-    } catch (e) { console.error("[SETTINGS] Parse error:", e); }
-}
+// =============================================================================
+// UTILITIES
+// =============================================================================
 
-// NOTE: loadRecords() is intentionally NOT called during app init.
-// fetchSharedRecords() is always used instead as the authoritative source.
-// localStorage prayer data (CONFIG.storageKey) is only an offline cache.
-function loadRecords() {
-    // DEPRECATED: Use fetchSharedRecords() instead.
-    // This function is kept only for backward compatibility with importJSON.
-    // It does NOT call syncCloudDatabase (which no longer exists).
-    try {
-        const saved = localStorage.getItem(CONFIG.storageKey);
-        if (saved) appState.records = JSON.parse(saved);
-        else appState.records = {};
-    } catch (e) { appState.records = {}; }
-}
-
-function saveToStorage() {
-    localStorage.setItem(CONFIG.settingsKey, JSON.stringify(appState.settings));
-}
-
-function setupTheme() {
-    document.body.classList.toggle('dark-mode', appState.settings.darkMode);
-    document.body.classList.toggle('light-mode', !appState.settings.darkMode);
-}
-
-// --- Utilities ---
 function getFormattedDate(date) {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -257,12 +327,19 @@ async function loadPrayerTimesSafe() {
     appState.prayerTimeSource = "default";
 }
 
-// --- Clock ---
+// =============================================================================
+// CLOCK
+// =============================================================================
+
 function startSidebarClock() {
     if (appState.clockInterval) clearInterval(appState.clockInterval);
     const update = () => {
         const now = new Date();
-        const tEl = document.getElementById('desktop-time'), dEl = document.getElementById('desktop-date'), mEl = document.getElementById('mobile-time'), hEl = document.getElementById('mobile-hijri'), mdEl = document.getElementById('mobile-date');
+        const tEl = document.getElementById('desktop-time');
+        const dEl = document.getElementById('desktop-date');
+        const mEl = document.getElementById('mobile-time');
+        const hEl = document.getElementById('mobile-hijri');
+        const mdEl = document.getElementById('mobile-date');
         if (tEl) tEl.textContent = now.toLocaleTimeString([], { hour12: false });
         if (dEl) dEl.textContent = now.toLocaleDateString(appState.language, { weekday: 'long', day: 'numeric', month: 'long' });
         if (mEl) mEl.textContent = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
@@ -271,19 +348,25 @@ function startSidebarClock() {
             try { hEl.textContent = new Intl.DateTimeFormat(appState.language + '-u-ca-islamic-uma-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' }).format(now); } catch (e) { hEl.textContent = ""; }
         }
     };
-    update(); appState.clockInterval = setInterval(update, 1000);
+    update();
+    appState.clockInterval = setInterval(update, 1000);
 }
 
-// --- Quran ---
+// =============================================================================
+// QURAN BANNER
+// =============================================================================
+
 function renderQuranBanner() {
     const tEl = document.getElementById('quran-text'), sEl = document.getElementById('quran-source'), dots = document.getElementById('carousel-dots');
     if (!tEl || !sEl) return;
     const slide = CONFIG.quranSlides[appState.quranIndex];
     tEl.textContent = slide.text; sEl.textContent = slide.source; tEl.style.direction = "rtl";
     if (dots) {
-        dots.innerHTML = ''; CONFIG.quranSlides.forEach((_, i) => {
+        dots.innerHTML = '';
+        CONFIG.quranSlides.forEach((_, i) => {
             const dot = document.createElement('div'); dot.className = `dot ${i === appState.quranIndex ? 'active' : ''}`;
-            dot.onclick = () => { appState.quranIndex = i; renderQuranBanner(); }; dots.appendChild(dot);
+            dot.onclick = () => { appState.quranIndex = i; renderQuranBanner(); };
+            dots.appendChild(dot);
         });
     }
 }
@@ -297,7 +380,10 @@ function startQuranCarousel() {
     }, 9000);
 }
 
-// --- Dashboard ---
+// =============================================================================
+// DASHBOARD
+// =============================================================================
+
 function renderDashboardLoadingState() {
     const n = document.getElementById('next-prayer-name'); if (n) n.textContent = t('dashboard.loadingPrayerTimes');
 }
@@ -334,7 +420,6 @@ function renderDashboard() {
     const n = document.getElementById('next-prayer-name'), r = document.getElementById('next-prayer-range');
     if (n) n.textContent = t(`prayer.${appState.nextPrayer.key}`);
     if (r) r.innerHTML = `<span>${t('dashboard.startsAt')} ${appState.nextPrayer.time}</span>`;
-    
     renderPrayerWindows();
     renderFamilyProgress();
 }
@@ -350,8 +435,8 @@ function renderPrayerWindows() {
         let sk = 'upcoming', bc = 'badge-info';
         if (cMin >= sMin && cMin < eMin) { sk = 'active'; bc = 'badge-success'; }
         else if (cMin >= eMin) {
-            sk = 'missed', bc = 'badge-danger';
-            let d = 0; CONFIG.members.forEach(m => { if (getTodayRecordsFromSharedState(m)[w.key.charAt(0).toUpperCase() + w.key.slice(1)]) d++; });
+            sk = 'missed'; bc = 'badge-danger';
+            let d = 0; CONFIG.members.forEach(m => { if (DataStore.getTodayRecords(m)[w.key.charAt(0).toUpperCase() + w.key.slice(1)]) d++; });
             if (d === CONFIG.members.length) { sk = 'completed'; bc = 'badge-gold'; }
         }
         const i = document.createElement('div'); i.className = `timeline-item ${sk === 'active' ? 'active' : ''} graphical-timeline-card`;
@@ -362,9 +447,9 @@ function renderPrayerWindows() {
 
 function renderFamilyProgress() {
     let done = 0, onTime = 0, late = 0, total = CONFIG.members.length * 5;
-    CONFIG.members.forEach(m => { 
-        const mr = getTodayRecordsFromSharedState(m); 
-        Object.values(mr).forEach(r => { done++; if (r.status === 'On time') onTime++; else if (r.status === 'Late') late++; }); 
+    CONFIG.members.forEach(m => {
+        const mr = DataStore.getTodayRecords(m);
+        Object.values(mr).forEach(r => { done++; if (r.status === 'On time') onTime++; else if (r.status === 'Late') late++; });
     });
     const pct = Math.round((done / total) * 100) || 0;
     const pctEl = document.getElementById('family-percentage'); if (pctEl) pctEl.textContent = `${pct}%`;
@@ -375,43 +460,28 @@ function renderFamilyProgress() {
     const circ = document.getElementById('family-progress-circle'); if (circ) { const len = 2 * Math.PI * 52; circ.style.strokeDashoffset = len - (pct / 100) * len; }
 }
 
-// --- Page Rendering ---
+// =============================================================================
+// FAMILY PAGE
+// =============================================================================
+
 function getLastActivity(m) {
-    const r = getTodayRecordsFromSharedState(m);
+    const r = DataStore.getTodayRecords(m);
     const keys = Object.keys(r);
     if (keys.length === 0) return null;
-    let lastKey = null;
-    let maxTime = 0;
-    keys.forEach(p => {
-        if (r[p].timestamp > maxTime) {
-            maxTime = r[p].timestamp;
-            lastKey = p;
-        }
-    });
+    let lastKey = null, maxTime = 0;
+    keys.forEach(p => { if (r[p].timestamp > maxTime) { maxTime = r[p].timestamp; lastKey = p; } });
     if (!lastKey) return null;
-    return {
-        prayer: lastKey,
-        time: r[lastKey].time.substring(0, 5)
-    };
+    return { prayer: lastKey, time: r[lastKey].time.substring(0, 5) };
 }
 
 function getMemberMissedCount(m, d) {
     const today = getFormattedDate(new Date());
     const r = (appState.records[d] || {})[m] || {};
-    if (d !== today) {
-        return 5 - Object.keys(r).length;
-    }
+    if (d !== today) return 5 - Object.keys(r).length;
     const tms = appState.prayerTimes;
     if (!tms) return 0;
-    const now = new Date();
-    const nm = now.getHours() * 60 + now.getMinutes();
-    const wins = [
-        { key: "Fajr", end: tms.Sunrise },
-        { key: "Dhuhr", end: tms.Asr },
-        { key: "Asr", end: tms.Maghrib },
-        { key: "Maghrib", end: tms.Isha },
-        { key: "Isha", end: tms.Fajr }
-    ];
+    const now = new Date(), nm = now.getHours() * 60 + now.getMinutes();
+    const wins = [{ key: "Fajr", end: tms.Sunrise }, { key: "Dhuhr", end: tms.Asr }, { key: "Asr", end: tms.Maghrib }, { key: "Maghrib", end: tms.Isha }, { key: "Isha", end: tms.Fajr }];
     let missed = 0;
     wins.forEach(w => {
         if (!r[w.key]) {
@@ -428,29 +498,50 @@ function getMemberMissedCount(m, d) {
 function isLateInDay(d) {
     const today = getFormattedDate(new Date());
     if (d !== today) return true;
-    const now = new Date();
-    return now.getHours() >= 15;
+    return new Date().getHours() >= 15;
+}
+
+function getMemberStats(m, d) {
+    const r = (appState.records[d] || {})[m] || {};
+    const dn = Object.keys(r).length;
+    const ot = Object.values(r).filter(x => x.status === 'On time').length;
+    const lt = Object.values(r).filter(x => x.status === 'Late').length;
+    const pct = Math.round((dn / 5) * 100);
+    let sk = "notStarted", bc = "badge-danger";
+    const missed = getMemberMissedCount(m, d);
+    if (dn === 5) { sk = (ot === 5) ? "perfectDay" : "completed"; bc = (ot === 5) ? "badge-gold" : "badge-success"; }
+    else if (missed >= 2 || (dn === 0 && isLateInDay(d))) { sk = "needsAttention"; bc = "badge-danger"; }
+    else if (dn > 0) { sk = "inProgress"; bc = "badge-info"; }
+    return { done: dn, onTime: ot, late: lt, percentage: pct, statusKey: sk, badgeClass: bc };
+}
+
+function getMemberStreak(m) {
+    let s = 0, cd = new Date();
+    while (true) {
+        const ds = getFormattedDate(cd), st = getMemberStats(m, ds);
+        if (st.done === 5) s++;
+        else if (ds !== appState.currentDate) break;
+        cd.setDate(cd.getDate() - 1);
+        if (s > 365) break;
+    }
+    return s;
 }
 
 function renderFamily() {
     const c = document.getElementById('family-members-grid'); if (!c) return; c.innerHTML = '';
     CONFIG.members.forEach((m, idx) => {
         const s = getMemberStats(m, appState.currentDate);
-        
         let activityStr = '';
         const act = getLastActivity(m);
         if (act) {
-            const prName = t('prayer.' + act.prayer.toLowerCase());
-            activityStr = t('family.lastMarked').replace('{prayer}', prName).replace('{time}', act.time);
+            activityStr = t('family.lastMarked').replace('{prayer}', t('prayer.' + act.prayer.toLowerCase())).replace('{time}', act.time);
         } else {
             activityStr = t('family.noActivity');
         }
-        
         const card = document.createElement('div');
         card.className = 'card member-card';
         card.style.animationDelay = `${idx * 0.05}s`;
         card.onclick = () => openMemberModal(m);
-        
         card.innerHTML = `
             <div class="member-card-header">
                 <div class="member-profile">
@@ -470,36 +561,17 @@ function renderFamily() {
                     <span class="progress-text-mini">${s.percentage}%</span>
                 </div>
             </div>
-            
             <div class="member-stats-container">
                 <div class="member-stat-row-new">
-                    <div class="stat-item-new">
-                        <span class="stat-icon-mini text-success"><i class="fas fa-check-circle"></i></span>
-                        <span class="stat-label-new">${t('family.done')}</span>
-                        <span class="stat-val-new">${s.done}/5</span>
-                    </div>
-                    <div class="stat-item-new">
-                        <span class="stat-icon-mini text-success"><i class="fas fa-clock"></i></span>
-                        <span class="stat-label-new">${t('family.onTime')}</span>
-                        <span class="stat-val-new">${s.onTime}</span>
-                    </div>
-                    <div class="stat-item-new">
-                        <span class="stat-icon-mini text-warning"><i class="fas fa-exclamation-circle"></i></span>
-                        <span class="stat-label-new">${t('family.late')}</span>
-                        <span class="stat-val-new">${s.late}</span>
-                    </div>
-                    <div class="stat-item-new">
-                        <span class="stat-icon-mini text-muted"><i class="fas fa-hourglass-half"></i></span>
-                        <span class="stat-label-new">${t('family.pendingOrMissed')}</span>
-                        <span class="stat-val-new">${5 - s.done}</span>
-                    </div>
+                    <div class="stat-item-new"><span class="stat-icon-mini text-success"><i class="fas fa-check-circle"></i></span><span class="stat-label-new">${t('family.done')}</span><span class="stat-val-new">${s.done}/5</span></div>
+                    <div class="stat-item-new"><span class="stat-icon-mini text-success"><i class="fas fa-clock"></i></span><span class="stat-label-new">${t('family.onTime')}</span><span class="stat-val-new">${s.onTime}</span></div>
+                    <div class="stat-item-new"><span class="stat-icon-mini text-warning"><i class="fas fa-exclamation-circle"></i></span><span class="stat-label-new">${t('family.late')}</span><span class="stat-val-new">${s.late}</span></div>
+                    <div class="stat-item-new"><span class="stat-icon-mini text-muted"><i class="fas fa-hourglass-half"></i></span><span class="stat-label-new">${t('family.pendingOrMissed')}</span><span class="stat-val-new">${5 - s.done}</span></div>
                 </div>
             </div>
-            
             <div class="member-card-activity">
                 <span class="activity-label"><i class="far fa-clock"></i> ${activityStr}</span>
             </div>
-            
             <div class="member-card-footer">
                 <span class="badge ${s.badgeClass}">${t('family.' + s.statusKey)}</span>
                 <button class="btn-card-action" onclick="event.stopPropagation(); openMemberModal('${m}')">
@@ -511,49 +583,39 @@ function renderFamily() {
     });
 }
 
-function getMemberStats(m, d) {
-    const r = (appState.records[d] || {})[m] || {};
-    const dn = Object.keys(r).length;
-    const ot = Object.values(r).filter(x => x.status === 'On time').length;
-    const lt = Object.values(r).filter(x => x.status === 'Late').length;
-    const pct = Math.round((dn / 5) * 100);
-    
-    let sk = "notStarted";
-    let bc = "badge-danger";
-    
-    const missed = getMemberMissedCount(m, d);
-    
-    if (dn === 5) {
-        sk = (ot === 5) ? "perfectDay" : "completed";
-        bc = (ot === 5) ? "badge-gold" : "badge-success";
-    } else if (missed >= 2 || (dn === 0 && isLateInDay(d))) {
-        sk = "needsAttention";
-        bc = "badge-danger";
-    } else if (dn > 0) {
-        sk = "inProgress";
-        bc = "badge-info";
-    }
-    return { done: dn, onTime: ot, late: lt, percentage: pct, statusKey: sk, badgeClass: bc };
-}
-
-function getMemberStreak(m) {
-    let s = 0, cd = new Date(); while (true) { const ds = getFormattedDate(cd), st = getMemberStats(m, ds); if (st.done === 5) s++; else if (ds !== appState.currentDate) break; cd.setDate(cd.getDate() - 1); if (s > 365) break; } return s;
-}
+// =============================================================================
+// HISTORY PAGE
+// =============================================================================
 
 function initHistoryFilters() {
-    const today = appState.currentDate || getFormattedDate(new Date()); appState.historyFilters.start = today; appState.historyFilters.end = today;
-    const s = document.getElementById('history-date-start'), e = document.getElementById('history-date-end'); if (s) s.value = today; if (e) e.value = today;
-    const sel = document.getElementById('history-filter-member'); if (sel && sel.options.length <= 1) CONFIG.members.forEach(m => { const o = document.createElement('option'); o.value = m; o.textContent = m; sel.appendChild(o); });
+    const today = appState.currentDate || getFormattedDate(new Date());
+    appState.historyFilters.start = today; appState.historyFilters.end = today;
+    const s = document.getElementById('history-date-start'), e = document.getElementById('history-date-end');
+    if (s) s.value = today; if (e) e.value = today;
+    const sel = document.getElementById('history-filter-member');
+    if (sel && sel.options.length <= 1) CONFIG.members.forEach(m => { const o = document.createElement('option'); o.value = m; o.textContent = m; sel.appendChild(o); });
 }
 
 function getFilteredHistory() {
     let res = []; const f = appState.historyFilters;
-    Object.keys(appState.records).forEach(d => { if (d >= f.start && d <= f.end) Object.keys(appState.records[d]).forEach(m => { if (f.member === 'all' || f.member === m) Object.keys(appState.records[d][m]).forEach(p => { if (f.prayer === 'all' || f.prayer === p) { const r = appState.records[d][m][p]; if (f.status === 'all' || f.status === r.status) if (!f.search || m.toLowerCase().includes(f.search.toLowerCase()) || (r.note && r.note.toLowerCase().includes(f.search.toLowerCase()))) res.push({ date: d, member: m, prayer: p, ...r }); } }); }); });
+    Object.keys(appState.records).forEach(d => {
+        if (d >= f.start && d <= f.end) Object.keys(appState.records[d]).forEach(m => {
+            if (f.member === 'all' || f.member === m) Object.keys(appState.records[d][m]).forEach(p => {
+                if (f.prayer === 'all' || f.prayer === p) {
+                    const r = appState.records[d][m][p];
+                    if (f.status === 'all' || f.status === r.status)
+                        if (!f.search || m.toLowerCase().includes(f.search.toLowerCase()) || (r.note && r.note.toLowerCase().includes(f.search.toLowerCase())))
+                            res.push({ date: d, member: m, prayer: p, ...r });
+                }
+            });
+        });
+    });
     return res.sort((a, b) => b.timestamp - a.timestamp);
 }
 
 function renderHistory() {
-    const f = getFilteredHistory(); const tot = f.length, ot = f.filter(r => r.status === 'On time').length, lt = f.filter(r => r.status === 'Late').length, mi = f.filter(r => r.status === 'Missed').length;
+    const f = getFilteredHistory();
+    const tot = f.length, ot = f.filter(r => r.status === 'On time').length, lt = f.filter(r => r.status === 'Late').length, mi = f.filter(r => r.status === 'Missed').length;
     ['hist-stat-total', 'hist-stat-ontime', 'hist-stat-late', 'hist-stat-missed'].forEach((id, idx) => { const el = document.getElementById(id); if (el) el.textContent = [tot, ot, lt, mi][idx]; });
     const dg = document.querySelector('.history-dashboard-grid'), hm = document.querySelector('.heatmap-card'), rs = document.querySelector('.records-section'), es = document.getElementById('history-empty-state');
     if (f.length === 0) { [dg, hm, rs].forEach(x => x && x.classList.add('hidden')); if (es) es.classList.remove('hidden'); return; }
@@ -562,13 +624,15 @@ function renderHistory() {
 }
 
 function renderHistoryCharts(recs) {
-    const cnts = { 'On time': 0, 'Late': 0, 'Missed': 0 }; recs.forEach(r => { if(cnts[r.status] !== undefined) cnts[r.status]++; });
+    const cnts = { 'On time': 0, 'Late': 0, 'Missed': 0 };
+    recs.forEach(r => { if (cnts[r.status] !== undefined) cnts[r.status]++; });
     const donut = document.getElementById('hist-status-donut');
     if (donut) { if (appState.charts.overallH) appState.charts.overallH.destroy(); appState.charts.overallH = new Chart(donut, { type: 'doughnut', data: { labels: [t('status.onTime'), t('status.late'), t('status.missed')], datasets: [{ data: [cnts['On time'], cnts['Late'], cnts['Missed']], backgroundColor: ['#2e7d32', '#fbc02d', '#d32f2f'], borderWidth: 0 }] }, options: { cutout: '65%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } } }, maintainAspectRatio: false } }); }
     const bar = document.getElementById('hist-prayer-bar');
     if (bar) {
-        const perf = {}; CONFIG.prayers.forEach(p => perf[p] = { ot: 0, lm: 0 }); recs.forEach(r => { if(perf[r.prayer]) { if (r.status === 'On time') perf[r.prayer].ot++; else perf[r.prayer].lm++; } });
-        if (appState.charts.barH) appState.charts.barH.destroy(); appState.charts.barH = new Chart(bar, { type: 'bar', data: { labels: CONFIG.prayers.map(p => t('prayer.' + p.toLowerCase())), datasets: [{ label: t('status.onTime'), data: CONFIG.prayers.map(p => perf[p].ot), backgroundColor: '#2e7d32', borderRadius: 4 }, { label: t('status.late') + '/' + t('status.missed'), data: CONFIG.prayers.map(p => perf[p].lm), backgroundColor: '#d32f2f', borderRadius: 4 }] }, options: { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } } }, maintainAspectRatio: false } });
+        const perf = {}; CONFIG.prayers.forEach(p => perf[p] = { ot: 0, lm: 0 }); recs.forEach(r => { if (perf[r.prayer]) { if (r.status === 'On time') perf[r.prayer].ot++; else perf[r.prayer].lm++; } });
+        if (appState.charts.barH) appState.charts.barH.destroy();
+        appState.charts.barH = new Chart(bar, { type: 'bar', data: { labels: CONFIG.prayers.map(p => t('prayer.' + p.toLowerCase())), datasets: [{ label: t('status.onTime'), data: CONFIG.prayers.map(p => perf[p].ot), backgroundColor: '#2e7d32', borderRadius: 4 }, { label: t('status.late') + '/' + t('status.missed'), data: CONFIG.prayers.map(p => perf[p].lm), backgroundColor: '#d32f2f', borderRadius: 4 }] }, options: { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } } }, maintainAspectRatio: false } });
     }
 }
 
@@ -578,9 +642,9 @@ function renderHistoryMemberSummary(recs) {
         const mr = recs.filter(r => r.member === m), tot = mr.length; if (tot === 0) return;
         const ot = mr.filter(r => r.status === 'On time').length, lt = mr.filter(r => r.status === 'Late').length, mi = mr.filter(r => r.status === 'Missed').length;
         const otp = Math.round((ot / tot) * 100), ltp = Math.round((lt / tot) * 100), mip = Math.round((mi / tot) * 100);
-        const r = document.createElement('div'); r.className = 'mini-member-row';
-        r.innerHTML = `<div class="mini-member-header"><span>${m}</span><span>${otp}% ${t('status.onTime')}</span></div><div class="mini-progress-track"><div class="mini-progress-fill success" style="width: ${otp}%"></div><div class="mini-progress-fill warning" style="width: ${ltp}%"></div><div class="mini-progress-fill danger" style="width: ${mip}%"></div></div>`;
-        c.appendChild(r);
+        const row = document.createElement('div'); row.className = 'mini-member-row';
+        row.innerHTML = `<div class="mini-member-header"><span>${m}</span><span>${otp}% ${t('status.onTime')}</span></div><div class="mini-progress-track"><div class="mini-progress-fill success" style="width: ${otp}%"></div><div class="mini-progress-fill warning" style="width: ${ltp}%"></div><div class="mini-progress-fill danger" style="width: ${mip}%"></div></div>`;
+        c.appendChild(row);
     });
 }
 
@@ -595,7 +659,8 @@ function renderHistoryHeatmap() {
         const dk = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`, div = document.createElement('div'); div.className = 'cal-day empty'; div.textContent = d;
         const data = appState.records[dk];
         if (data) {
-            let dn = 0, ot = 0, exp = 0; CONFIG.members.forEach(mbr => { if (appState.historyFilters.member === 'all' || appState.historyFilters.member === mbr) { if (data[mbr]) { exp += 5; Object.values(data[mbr]).forEach(r => { dn++; if (r.status === 'On time') ot++; }); } } });
+            let dn = 0, ot = 0, exp = 0;
+            CONFIG.members.forEach(mbr => { if (appState.historyFilters.member === 'all' || appState.historyFilters.member === mbr) { if (data[mbr]) { exp += 5; Object.values(data[mbr]).forEach(r => { dn++; if (r.status === 'On time') ot++; }); } } });
             if (exp > 0) { const pct = dn / exp, otp = dn > 0 ? ot / dn : 0; if (pct >= 0.8 && otp >= 0.8) div.className = 'cal-day good'; else if (pct >= 0.5) div.className = 'cal-day partial'; else div.className = 'cal-day weak'; div.innerHTML += `<div class="tooltip">${dn}/${exp} ${t('modals.prayersText')}<br>${ot} ${t('status.onTime')}</div>`; }
             else div.innerHTML += `<div class="tooltip">${t('history.noData')}</div>`;
         } else div.innerHTML += `<div class="tooltip">${t('history.noData')}</div>`;
@@ -617,159 +682,68 @@ function renderHistoryTable(recs) {
 
 function getStatusBadgeClass(status) { if (status === 'On time') return 'badge-success'; if (status === 'Late') return 'badge-danger'; if (status === 'Missed') return 'badge-danger'; return 'badge-info'; }
 
+// =============================================================================
+// STATISTICS PAGE
+// =============================================================================
+
 function renderStats() {
     const f = getFilteredHistory();
     const sc = document.getElementById('stats-content'), se = document.getElementById('stats-empty-state');
-    
-    if (f.length === 0) {
-        if (sc) sc.classList.add('hidden');
-        if (se) se.classList.remove('hidden');
-        return;
-    }
-    
-    if (sc) sc.classList.remove('hidden');
-    if (se) se.classList.add('hidden');
-
+    if (f.length === 0) { if (sc) sc.classList.add('hidden'); if (se) se.classList.remove('hidden'); return; }
+    if (sc) sc.classList.remove('hidden'); if (se) se.classList.add('hidden');
     const cnts = { 'On time': 0, 'Late': 0, 'Missed': 0 };
     f.forEach(r => { if (cnts[r.status] !== undefined) cnts[r.status]++; });
-
-    // Update stat card numbers
     const tot = f.length, ot = cnts['On time'], lt = cnts['Late'], mi = cnts['Missed'];
-    ['stats-card-total', 'stats-card-ontime', 'stats-card-late', 'stats-card-missed'].forEach((id, idx) => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = [tot, ot, lt, mi][idx];
-    });
-
-    // 1. Overall Performance chart (doughnut)
+    ['stats-card-total', 'stats-card-ontime', 'stats-card-late', 'stats-card-missed'].forEach((id, idx) => { const el = document.getElementById(id); if (el) el.textContent = [tot, ot, lt, mi][idx]; });
     const ov = document.getElementById('chart-overall-donut');
-    if (ov) {
-        try {
-            if (appState.charts.overall) appState.charts.overall.destroy();
-            appState.charts.overall = new Chart(ov, {
-                type: 'doughnut',
-                data: {
-                    labels: [t('status.onTime'), t('status.late'), t('status.missed')],
-                    datasets: [{
-                        data: [cnts['On time'], cnts['Late'], cnts['Missed']],
-                        backgroundColor: ['#2e7d32', '#fbc02d', '#d32f2f'],
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    cutout: '70%',
-                    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } } },
-                    maintainAspectRatio: false
-                }
-            });
-        } catch (err) { console.error("Chart overall failed", err); }
-    }
-
-    // 2. Member Comparison chart (bar)
+    if (ov) { try { if (appState.charts.overall) appState.charts.overall.destroy(); appState.charts.overall = new Chart(ov, { type: 'doughnut', data: { labels: [t('status.onTime'), t('status.late'), t('status.missed')], datasets: [{ data: [cnts['On time'], cnts['Late'], cnts['Missed']], backgroundColor: ['#2e7d32', '#fbc02d', '#d32f2f'], borderWidth: 0 }] }, options: { cutout: '70%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } } }, maintainAspectRatio: false } }); } catch (err) { console.error("Chart overall failed", err); } }
     const cmp = document.getElementById('chart-member-comparison');
-    if (cmp) {
-        try {
-            const p = {}; CONFIG.members.forEach(m => p[m] = { d: 0, ot: 0 });
-            f.forEach(r => { p[r.member].d++; if (r.status === 'On time') p[r.member].ot++; });
-            if (appState.charts.comparison) appState.charts.comparison.destroy();
-            appState.charts.comparison = new Chart(cmp, {
-                type: 'bar',
-                data: {
-                    labels: CONFIG.members,
-                    datasets: [
-                        { label: t('status.onTime'), data: CONFIG.members.map(m => p[m].ot), backgroundColor: '#d4af37' },
-                        { label: t('family.completed'), data: CONFIG.members.map(m => p[m].d), backgroundColor: '#1b4332' }
-                    ]
-                },
-                options: {
-                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
-                    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } } },
-                    maintainAspectRatio: false
-                }
-            });
-        } catch (err) { console.error("Chart comparison failed", err); }
-    }
-
-    // 3. Prayer Performance chart (bar)
+    if (cmp) { try { const p = {}; CONFIG.members.forEach(m => p[m] = { d: 0, ot: 0 }); f.forEach(r => { p[r.member].d++; if (r.status === 'On time') p[r.member].ot++; }); if (appState.charts.comparison) appState.charts.comparison.destroy(); appState.charts.comparison = new Chart(cmp, { type: 'bar', data: { labels: CONFIG.members, datasets: [{ label: t('status.onTime'), data: CONFIG.members.map(m => p[m].ot), backgroundColor: '#d4af37' }, { label: t('family.completed'), data: CONFIG.members.map(m => p[m].d), backgroundColor: '#1b4332' }] }, options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } } }, maintainAspectRatio: false } }); } catch (err) { console.error("Chart comparison failed", err); } }
     const prp = document.getElementById('chart-prayer-performance');
-    if (prp) {
-        try {
-            const perf = {}; CONFIG.prayers.forEach(pr => perf[pr] = { ot: 0, lm: 0 });
-            f.forEach(r => {
-                if (perf[r.prayer]) {
-                    if (r.status === 'On time') perf[r.prayer].ot++;
-                    else perf[r.prayer].lm++;
-                }
-            });
-            if (appState.charts.prayerPerformance) appState.charts.prayerPerformance.destroy();
-            appState.charts.prayerPerformance = new Chart(prp, {
-                type: 'bar',
-                data: {
-                    labels: CONFIG.prayers.map(pr => t('prayer.' + pr.toLowerCase())),
-                    datasets: [
-                        { label: t('status.onTime'), data: CONFIG.prayers.map(pr => perf[pr].ot), backgroundColor: '#2e7d32', borderRadius: 4 },
-                        { label: t('status.late') + '/' + t('status.missed'), data: CONFIG.prayers.map(pr => perf[pr].lm), backgroundColor: '#d32f2f', borderRadius: 4 }
-                    ]
-                },
-                options: {
-                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } },
-                    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } } },
-                    maintainAspectRatio: false
-                }
-            });
-        } catch (err) { console.error("Chart prayer performance failed", err); }
-    }
-
-    // 4. Insights
-    const c = document.getElementById('stats-insights');
-    if (c) {
-        c.innerHTML = '';
+    if (prp) { try { const perf = {}; CONFIG.prayers.forEach(pr => perf[pr] = { ot: 0, lm: 0 }); f.forEach(r => { if (perf[r.prayer]) { if (r.status === 'On time') perf[r.prayer].ot++; else perf[r.prayer].lm++; } }); if (appState.charts.prayerPerformance) appState.charts.prayerPerformance.destroy(); appState.charts.prayerPerformance = new Chart(prp, { type: 'bar', data: { labels: CONFIG.prayers.map(pr => t('prayer.' + pr.toLowerCase())), datasets: [{ label: t('status.onTime'), data: CONFIG.prayers.map(pr => perf[pr].ot), backgroundColor: '#2e7d32', borderRadius: 4 }, { label: t('status.late') + '/' + t('status.missed'), data: CONFIG.prayers.map(pr => perf[pr].lm), backgroundColor: '#d32f2f', borderRadius: 4 }] }, options: { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } } }, maintainAspectRatio: false } }); } catch (err) { console.error("Chart prayer performance failed", err); } }
+    const ci = document.getElementById('stats-insights');
+    if (ci) {
+        ci.innerHTML = '';
         const i = [];
         const pm = {}; f.forEach(r => { if (r.status !== 'On time') pm[r.prayer] = (pm[r.prayer] || 0) + 1; });
         const wp = Object.entries(pm).sort((a, b) => b[1] - a[1])[0];
         if (wp) i.push(`${t('messages.mostMissed')} <strong>${t('prayer.' + wp[0].toLowerCase())}</strong>.`);
-        const bm = CONFIG.members.map(m => {
-            const mr = f.filter(r => r.member === m), ot = mr.filter(r => r.status === 'On time').length;
-            return { name: m, rate: mr.length > 0 ? (ot / mr.length) : 0 };
-        }).sort((a, b) => b.rate - a.rate)[0];
+        const bm = CONFIG.members.map(m => { const mr = f.filter(r => r.member === m), ot = mr.filter(r => r.status === 'On time').length; return { name: m, rate: mr.length > 0 ? (ot / mr.length) : 0 }; }).sort((a, b) => b.rate - a.rate)[0];
         if (bm && bm.rate > 0) i.push(`<strong>${bm.name}</strong> ${t('messages.highestRate')}`);
-        
-        i.forEach(txt => {
-            const d = document.createElement('div');
-            d.className = 'card insight-card';
-            d.innerHTML = `<p>${txt}</p>`;
-            c.appendChild(d);
-        });
+        i.forEach(txt => { const d = document.createElement('div'); d.className = 'card insight-card'; d.innerHTML = `<p>${txt}</p>`; ci.appendChild(d); });
     }
 }
 
+// =============================================================================
+// SETTINGS PAGE
+// =============================================================================
+
 function renderSettings() {
-    const s = appState.settings;
     const dmEl = document.getElementById('setting-dark-mode');
-    if (dmEl) dmEl.checked = !!s.darkMode;
-    
-    const sheetUrlEl = document.getElementById('setting-sheet-url');
-    const sheetPasscodeEl = document.getElementById('setting-sheet-passcode');
-    if (sheetUrlEl) sheetUrlEl.value = s.sheetUrl || '';
-    if (sheetPasscodeEl) sheetPasscodeEl.value = s.sheetPasscode || '';
-    
-    updateSyncStatus(s.sheetUrl ? (appState.lastSync ? 'success' : 'syncing') : 'disconnected');
+    if (dmEl) dmEl.checked = !!appState.settings.darkMode;
 }
 
-// --- Modals ---
+// =============================================================================
+// MODALS
+// =============================================================================
+
 function openMemberModal(m) {
     const n = document.getElementById('modal-member-name'); if (n) n.textContent = m;
     const st = getMemberStats(m, appState.currentDate);
     const b = document.getElementById('modal-progress-bar'), tEl = document.getElementById('modal-progress-text'), sk = document.getElementById('modal-member-streak');
-    if (b) b.style.width = `${st.percentage}%`; if (tEl) tEl.textContent = `${st.done}/5 ${t('modals.completedText')}`; if (sk) sk.innerHTML = `<i class="fas fa-fire"></i> ${getMemberStreak(m)} ${t('family.streak')}`;
-    renderMemberChecklist(m); document.getElementById('member-modal').classList.add('active');
+    if (b) b.style.width = `${st.percentage}%`;
+    if (tEl) tEl.textContent = `${st.done}/5 ${t('modals.completedText')}`;
+    if (sk) sk.innerHTML = `<i class="fas fa-fire"></i> ${getMemberStreak(m)} ${t('family.streak')}`;
+    renderMemberChecklist(m);
+    document.getElementById('member-modal').classList.add('active');
 }
 
 function renderMemberChecklist(m) {
     const c = document.getElementById('member-prayer-list'); if (!c) return; c.innerHTML = '';
-    const recs = getTodayRecordsFromSharedState(m), now = new Date(), nm = now.getHours() * 60 + now.getMinutes();
+    const recs = DataStore.getTodayRecords(m), now = new Date(), nm = now.getHours() * 60 + now.getMinutes();
     CONFIG.prayers.forEach(p => {
         const r = recs[p], pt = appState.prayerTimes[p], [ph, pm] = pt.split(':').map(Number), pmIn = ph * 60 + pm;
-        let h = ''; 
+        let h = '';
         if (r) {
             h = `
                 <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem;">
@@ -779,30 +753,27 @@ function renderMemberChecklist(m) {
                     </button>
                 </div>
             `;
+        } else if (nm < pmIn) {
+            h = `<button class="btn btn-ghost text-muted" disabled>${t('modals.upcoming')}</button>`;
+        } else {
+            h = `
+                <div class="prayer-action-container" style="display: flex; align-items: center; gap: 0.75rem;">
+                    <span class="arabic-pledge-badge">والله صليت</span>
+                    <button class="btn btn-primary btn-sm" onclick="markPrayer('${m}', '${p}')">${t('family.markAsPrayed')}</button>
+                </div>
+            `;
         }
-        else if (nm < pmIn) h = `<button class="btn btn-ghost text-muted" disabled>${t('modals.upcoming')}</button>`;
-        else h = `
-            <div class="prayer-action-container" style="display: flex; align-items: center; gap: 0.75rem;">
-                <span class="arabic-pledge-badge">والله صليت</span>
-                <button class="btn btn-primary btn-sm" onclick="markPrayer('${m}', '${p}')">${t('family.markAsPrayed')}</button>
-            </div>
-        `;
         const div = document.createElement('div'); div.className = `prayer-row ${r ? 'completed' : ''}`;
         div.innerHTML = `<div class="prayer-meta"><span class="p-name">${t('prayer.' + p.toLowerCase())}</span><span class="p-window">${t('modals.startsAt')} ${pt}</span></div><div class="prayer-action">${h}</div>`;
         c.appendChild(div);
     });
 }
 
-// Track which records were optimistically saved so we don't lose them on stale GET
-appState.optimisticRecords = {};
+// =============================================================================
+// PRAYER MARKING (uses DataStore — no network calls)
+// =============================================================================
 
-async function markPrayer(m, p) {
-    // Prevent double-click / concurrent saves
-    if (appState.isSaving) {
-        console.warn("[MARK] Already saving, ignoring duplicate click.");
-        return;
-    }
-
+function markPrayer(m, p) {
     const now = new Date(), nm = now.getHours() * 60 + now.getMinutes();
     let em = 1440;
     const ni = CONFIG.prayers.indexOf(p) + 1;
@@ -813,122 +784,22 @@ async function markPrayer(m, p) {
     const s = nm <= em ? 'On time' : 'Late';
     const record = { status: s, time: now.toLocaleTimeString([], { hour12: false }), timestamp: now.getTime() };
 
-    const sheetUrl = appState.settings.sheetUrl;
-    if (!sheetUrl) {
-        console.warn("[MARK] No API URL configured. Backend not connected. Saving locally only.");
-        if (!appState.records[appState.currentDate]) appState.records[appState.currentDate] = {};
-        if (!appState.records[appState.currentDate][m]) appState.records[appState.currentDate][m] = {};
-        appState.records[appState.currentDate][m][p] = record;
-        showToast(`⚠️ ${m} ${t('messages.marked')} ${t('prayer.' + p.toLowerCase())} — ${t('settings.statusDisconnected') || 'Backend not connected.'}`, 'warning');
-        refreshUI(m);
-        return;
-    }
-
-    // STEP 1: Optimistic update — update appState.records immediately so UI is instant
-    console.log(`[MARK] Optimistically updating UI for: ${m} / ${p} / ${s}`);
-    if (!appState.records[appState.currentDate]) appState.records[appState.currentDate] = {};
-    if (!appState.records[appState.currentDate][m]) appState.records[appState.currentDate][m] = {};
-    appState.records[appState.currentDate][m][p] = record;
-
-    // Track this as an optimistic save so delayed re-fetch doesn't erase it
-    const optKey = `${appState.currentDate}_${m}_${p}`;
-    appState.optimisticRecords[optKey] = { record, savedAt: Date.now() };
-
-    // STEP 2: Render UI immediately (user sees result at once)
+    DataStore.saveRecord(appState.currentDate, m, p, record);
+    showToast(`${m} ${t('messages.marked')} ${t('prayer.' + p.toLowerCase())} ${t('status.' + (s === 'On time' ? 'onTime' : s.toLowerCase()))}!`);
     refreshUI(m);
-    updateSyncStatus('syncing');
-    showToast(t('settings.statusSyncing') || 'Saving to Google Sheet...');
-
-    // STEP 3: Save to Google Sheet in background
-    appState.isSaving = true;
-    const success = await saveSharedPrayerRecord(appState.currentDate, m, p, record, 'save');
-    appState.isSaving = false;
-
-    if (success) {
-        console.log(`[MARK] Save confirmed. Scheduling delayed re-fetch in 3s...`);
-        showToast(`✅ ${m} ${t('messages.marked')} ${t('prayer.' + p.toLowerCase())} ${t('status.' + (s === 'On time' ? 'onTime' : s.toLowerCase()))}!`);
-        updateSyncStatus('success');
-        appState.lastSync = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        // STEP 4: Delayed re-fetch — give Apps Script 3 seconds to process before reading back
-        // (Immediate fetch returns stale cached data from Apps Script CDN)
-        setTimeout(async () => {
-            console.log("[MARK] Delayed re-fetch after save...");
-            await fetchSharedRecords(true);
-        }, 3000);
-    } else {
-        // Save failed: revert the optimistic update
-        console.error("[MARK] Save to Google Sheets FAILED. Reverting optimistic update.");
-        delete appState.records[appState.currentDate]?.[m]?.[p];
-        delete appState.optimisticRecords[optKey];
-        refreshUI(m); // re-render to show the reverted state
-        showToast('❌ ' + (t('settings.syncError') || 'Failed to save to Google Sheets. Please check your API URL.'), 'danger');
-        updateSyncStatus('error');
-    }
 }
 
-async function undoPrayer(m, p) {
-    if (appState.isSaving) {
-        console.warn("[UNDO] Already saving, ignoring.");
-        return;
-    }
-
-    const sheetUrl = appState.settings.sheetUrl;
-    if (!sheetUrl) {
-        console.warn("[UNDO] No API URL configured. Backend not connected.");
-        if (appState.records[appState.currentDate]?.[m]?.[p]) {
-            delete appState.records[appState.currentDate][m][p];
-            showToast(`⚠️ ${t('family.undo')}: ${t('prayer.' + p.toLowerCase())} — Backend not connected. Local only.`, 'warning');
-            refreshUI(m);
-        }
-        return;
-    }
-
-    // STEP 1: Optimistic removal
-    console.log(`[UNDO] Optimistically removing: ${m} / ${p}`);
-    const optKey = `${appState.currentDate}_${m}_${p}`;
-    const backup = appState.records[appState.currentDate]?.[m]?.[p]; // backup in case save fails
-    if (backup) delete appState.records[appState.currentDate][m][p];
-    delete appState.optimisticRecords[optKey];
-    refreshUI(m); // immediate UI update
-    updateSyncStatus('syncing');
-    showToast(t('settings.statusSyncing') || 'Removing from Google Sheet...');
-
-    // STEP 2: Delete from sheet
-    appState.isSaving = true;
-    const success = await saveSharedPrayerRecord(appState.currentDate, m, p, null, 'delete');
-    appState.isSaving = false;
-
-    if (success) {
-        showToast(`✅ ${t('family.undo')}: ${t('prayer.' + p.toLowerCase())}`);
-        updateSyncStatus('success');
-        appState.lastSync = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        // Delayed re-fetch
-        setTimeout(async () => {
-            console.log("[UNDO] Delayed re-fetch after delete...");
-            await fetchSharedRecords(true);
-        }, 3000);
-    } else {
-        // Revert: restore the deleted record
-        console.error("[UNDO] Delete from Google Sheets FAILED. Reverting.");
-        if (backup) {
-            if (!appState.records[appState.currentDate]) appState.records[appState.currentDate] = {};
-            if (!appState.records[appState.currentDate][m]) appState.records[appState.currentDate][m] = {};
-            appState.records[appState.currentDate][m][p] = backup;
-        }
-        refreshUI(m);
-        showToast('❌ ' + (t('settings.syncError') || 'Failed to remove from Google Sheets.'), 'danger');
-        updateSyncStatus('error');
-    }
+function undoPrayer(m, p) {
+    DataStore.deleteRecord(appState.currentDate, m, p);
+    showToast(`${t('family.undo')}: ${t('prayer.' + p.toLowerCase())}`);
+    refreshUI(m);
 }
 
 function refreshUI(m) {
-    // 1. Update all pages in background
     renderDashboard();
     renderFamily();
     renderHistory();
     renderStats();
-
-    // 2. Update modal if open
     const modal = document.getElementById('member-modal');
     if (modal && modal.classList.contains('active')) {
         const st = getMemberStats(m, appState.currentDate);
@@ -944,19 +815,60 @@ function renderAll() {
     renderDashboard(); renderFamily(); renderHistory(); renderStats(); renderSettings();
 }
 
+// =============================================================================
+// DATA EXPORT / IMPORT / CLEAR
+// =============================================================================
+
+function exportJSON() {
+    const data = JSON.stringify(appState.records, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `askar_prayer_backup_${appState.currentDate}.json`; a.click();
+}
+
+function exportCSV() {
+    const filtered = getFilteredHistory();
+    let csv = 'Date,Member,Prayer,Status,Time\n';
+    filtered.forEach(r => { csv += `${r.date},${r.member},${r.prayer},${r.status},${r.time}\n`; });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `askar_prayer_history_${appState.currentDate}.csv`; a.click();
+}
+
+function importJSON(e) {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            const imported = JSON.parse(event.target.result);
+            DataStore.importRecords(imported);
+            renderAll();
+            showToast(t('messages.restored'));
+        } catch (err) {
+            showToast(t('messages.invalidBackup'), "danger");
+        }
+    };
+    reader.readAsText(file);
+}
+
+// =============================================================================
+// EVENT LISTENERS
+// =============================================================================
+
 function attachEventListeners() {
+    // Close modals
     document.querySelectorAll('.close-modal').forEach(b => b.onclick = () => document.querySelectorAll('.modal').forEach(m => m.classList.remove('active')));
-    
+
     // Theme toggle
     const dmEl = document.getElementById('setting-dark-mode');
     if (dmEl) {
         dmEl.onchange = (e) => {
             appState.settings.darkMode = e.target.checked;
             setupTheme();
-            saveToStorage();
+            saveSettings();
         };
     }
-    
+
     // History filters
     ['history-date-start', 'history-date-end', 'history-filter-member', 'history-filter-prayer', 'history-filter-status'].forEach(id => {
         const el = document.getElementById(id);
@@ -965,43 +877,34 @@ function attachEventListeners() {
             renderHistory();
         };
     });
-    
+
     const hs = document.getElementById('history-search');
-    if (hs) hs.oninput = (e) => {
-        appState.historyFilters.search = e.target.value;
-        renderHistory();
-    };
-    
+    if (hs) hs.oninput = (e) => { appState.historyFilters.search = e.target.value; renderHistory(); };
+
     const rH = document.getElementById('history-reset-btn'), rE = document.getElementById('history-reset-empty-btn');
     const rf = () => {
         initHistoryFilters();
-        appState.historyFilters.member = 'all';
-        appState.historyFilters.prayer = 'all';
-        appState.historyFilters.status = 'all';
-        appState.historyFilters.search = '';
-        ['history-filter-member', 'history-filter-prayer', 'history-filter-status', 'history-search'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.value = (id === 'history-search' ? '' : 'all');
-        });
+        appState.historyFilters.member = 'all'; appState.historyFilters.prayer = 'all';
+        appState.historyFilters.status = 'all'; appState.historyFilters.search = '';
+        ['history-filter-member', 'history-filter-prayer', 'history-filter-status', 'history-search'].forEach(id => { const el = document.getElementById(id); if (el) el.value = (id === 'history-search' ? '' : 'all'); });
         renderHistory();
     };
     if (rH) rH.onclick = rf;
     if (rE) rE.onclick = rf;
-    
-    // Switch views
+
+    // View switchers
     document.querySelectorAll('.switcher-btn').forEach(b => b.onclick = () => {
         document.querySelectorAll('.switcher-btn').forEach(x => x.classList.remove('active'));
         b.classList.add('active');
         appState.historyFilters.view = b.dataset.historyView;
         renderHistory();
     });
-    
-    // Stats Range Tabs
+
+    // Stats range tabs
     document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => {
         document.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('active'));
         b.classList.add('active');
-        const td = new Date();
-        let st = new Date();
+        const td = new Date(); let st = new Date();
         switch (b.dataset.range) {
             case 'week': st.setDate(td.getDate() - 7); break;
             case 'month': st.setMonth(td.getMonth() - 1); break;
@@ -1011,17 +914,22 @@ function attachEventListeners() {
         appState.historyFilters.end = getFormattedDate(td);
         renderStats();
     });
-    
+
     // Data backup
-    const expJ = document.getElementById('btn-export-json'), ec = document.getElementById('btn-export-csv'), ij = document.getElementById('import-json'), ra = document.getElementById('btn-reset-all');
+    const expJ = document.getElementById('btn-export-json');
+    const expC = document.getElementById('btn-export-csv');
+    const impJ = document.getElementById('import-json');
     if (expJ) expJ.onclick = exportJSON;
-    if (ec) ec.onclick = exportCSV;
-    if (ij) ij.onchange = importJSON;
+    if (expC) expC.onclick = exportCSV;
+    if (impJ) impJ.onchange = importJSON;
+
+    // Clear All Data (with password)
+    const ra = document.getElementById('btn-reset-all');
     const clearModal = document.getElementById('clear-data-modal');
     const clearInput = document.getElementById('clear-data-password-input');
     const clearError = document.getElementById('clear-data-error-msg');
     const clearConfirmBtn = document.getElementById('confirm-clear-data-btn');
-    
+
     if (ra && clearModal && clearInput && clearError && clearConfirmBtn) {
         ra.onclick = () => {
             clearInput.value = '';
@@ -1030,37 +938,23 @@ function attachEventListeners() {
             clearModal.classList.add('active');
             clearInput.focus();
         };
-        
-        const handleConfirm = async () => {
+        const handleConfirm = () => {
             if (clearInput.value === 'askar12345') {
-                appState.records = {};
-                saveToStorage();
+                DataStore.clearAll();
                 renderAll();
                 showToast(t('messages.resetDone'));
                 clearModal.classList.remove('active');
-                
-                // Cloud reset
-                if (appState.settings.sheetUrl) {
-                    await resetCloudDatabase();
-                    await fetchSharedRecords();
-                }
             } else {
                 clearError.textContent = t('settings.wrongPassword');
                 clearError.style.display = 'block';
                 clearInput.focus();
             }
         };
-        
         clearConfirmBtn.onclick = handleConfirm;
-        
-        clearInput.onkeydown = (e) => {
-            if (e.key === 'Enter') {
-                handleConfirm();
-            }
-        };
+        clearInput.onkeydown = (e) => { if (e.key === 'Enter') handleConfirm(); };
     }
-    
-    // Reset Preferences Button
+
+    // Reset Preferences
     const rp = document.getElementById('btn-reset-preferences');
     if (rp) {
         rp.onclick = () => {
@@ -1074,85 +968,45 @@ function attachEventListeners() {
             }
         };
     }
-    
-    // Go to Family empty stats button
+
+    // Go to Family from empty stats
     const gtf = document.getElementById('stats-go-to-family-btn');
-    if (gtf) {
-        gtf.onclick = () => navigateTo('family');
-    }
-    
-    // Google Sheets save settings click handler
-    const saveConnectionBtn = document.getElementById('btn-save-sheet-settings');
-    if (saveConnectionBtn) {
-        saveConnectionBtn.onclick = async () => {
-            const urlEl = document.getElementById('setting-sheet-url');
-            const passcodeEl = document.getElementById('setting-sheet-passcode');
-            if (urlEl && passcodeEl) {
-                const newUrl = urlEl.value.trim();
-                const newPasscode = passcodeEl.value.trim();
-
-                // Validate URL before saving
-                if (newUrl && !newUrl.includes('/exec')) {
-                    showToast('❌ URL must end with /exec (copy it exactly from Apps Script deploy)', 'danger');
-                    return;
-                }
-
-                appState.settings.sheetUrl = newUrl;
-                appState.settings.sheetPasscode = newPasscode;
-                saveToStorage();
-                console.log("[SETTINGS] API URL saved:", newUrl.substring(0, 60) + '...');
-
-                if (appState.settings.sheetUrl) {
-                    showToast(t('messages.settingsSaved') || 'Settings saved. Connecting...');
-                    // Run health check then fetch records
-                    const ok = await runHealthCheck();
-                    if (ok) {
-                        await fetchSharedRecords(true);
-                        showToast('✅ ' + (t('settings.syncSuccess') || 'Connected and records loaded!'));
-                    }
-                } else {
-                    showToast(t('messages.settingsSaved') || 'Settings saved.');
-                    updateSyncStatus('disconnected');
-                }
-            }
-        };
-    }
-
-    // Manual Refresh handlers
-    const desktopRefreshBtn = document.getElementById('desktop-refresh-btn');
-    if (desktopRefreshBtn) {
-        desktopRefreshBtn.onclick = async () => {
-            console.log("[REFRESH] Manual sync triggered (desktop)");
-            await fetchSharedRecords(true);
-            showToast('✅ ' + (t('settings.syncSuccess') || 'Successfully synchronized with Google Sheet'));
-        };
-    }
-    const mobileRefreshBtn = document.getElementById('mobile-refresh-btn');
-    if (mobileRefreshBtn) {
-        mobileRefreshBtn.onclick = async () => {
-            console.log("[REFRESH] Manual sync triggered (mobile)");
-            await fetchSharedRecords(true);
-            showToast('✅ ' + (t('settings.syncSuccess') || 'Successfully synchronized with Google Sheet'));
-        };
-    }
+    if (gtf) gtf.onclick = () => navigateTo('family');
 }
 
-function showToast(m, tp = 'info') { const c = document.getElementById('toast-container'); if (!c) return; const t = document.createElement('div'); t.className = `toast ${tp}`; t.textContent = m; c.appendChild(t); setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 500); }, 3000); }
-function triggerConfetti() { if (typeof confetti === 'function') confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#1b4332', '#d4af37', '#2d6a4f'] }); }
+// =============================================================================
+// TOAST / MISC
+// =============================================================================
+
+function showToast(m, tp = 'info') {
+    const c = document.getElementById('toast-container'); if (!c) return;
+    const toast = document.createElement('div'); toast.className = `toast ${tp}`; toast.textContent = m; c.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 500); }, 3000);
+}
+
+function triggerConfetti() {
+    if (typeof confetti === 'function') confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#1b4332', '#d4af37', '#2d6a4f'] });
+}
 
 function checkDayReset() {
     const today = getFormattedDate(new Date());
-    if (appState.currentDate !== today) { appState.currentDate = today; loadPrayerTimesSafe().then(() => { renderAll(); showToast(t('messages.dayRefreshed')); }); }
+    if (appState.currentDate !== today) {
+        appState.currentDate = today;
+        loadPrayerTimesSafe().then(() => { renderAll(); showToast(t('messages.dayRefreshed')); });
+    }
 }
 
+// Language change re-render
 window.addEventListener('languageChanged', () => {
     applyTranslations();
-    startSidebarClock(); // Update date locale
+    startSidebarClock();
     renderAll();
-    if (window.appDock) {
-        window.appDock.updateLabels(t);
-    }
+    if (window.appDock) window.appDock.updateLabels(t);
 });
+
+// =============================================================================
+// DOCK NAVIGATION
+// =============================================================================
 
 function initializeDock() {
     const items = [
@@ -1169,440 +1023,10 @@ function initializeDock() {
         magnification: 62,
         distance: 180
     });
-    // Set initial active state
     updateActiveNav(appState.currentPage || 'dashboard');
 }
 
-function exportJSON() { const data = JSON.stringify(appState.records, null, 2); const blob = new Blob([data], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `askar_prayer_backup_${appState.currentDate}.json`; a.click(); }
-function exportCSV() { const filtered = getFilteredHistory(); let csv = 'Date,Member,Prayer,Status,Time\n'; filtered.forEach(r => { csv += `${r.date},${r.member},${r.prayer},${r.status},${r.time}\n`; }); const blob = new Blob([csv], { type: 'text/csv' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `askar_prayer_history_${appState.currentDate}.csv`; a.click(); }
-function importJSON(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-        try {
-            const imported = JSON.parse(event.target.result);
-            appState.records = { ...appState.records, ...imported };
-            saveToStorage();
-            renderAll();
-            showToast(t('messages.restored'));
-            
-            // Batch import to Google Sheet if configured
-            if (appState.settings.sheetUrl) {
-                const flatRecords = convertNestedRecordsToFlat(appState.records);
-                updateSyncStatus('syncing');
-                await importRecordsToCloud(flatRecords);
-                updateSyncStatus('success');
-            }
-        } catch (err) {
-            showToast(t('messages.invalidBackup'), "danger");
-        }
-    };
-    reader.readAsText(file);
-}
-
-// =============================================================================
-// GOOGLE SHEETS SHARED BACKEND
-// All prayer data flows through these functions.
-// localStorage is only a UI-state cache, never the source of truth for records.
-// =============================================================================
-
-/**
- * runHealthCheck() — GETs the Apps Script URL to verify connection.
- * Returns true if connected, false otherwise.
- */
-async function runHealthCheck() {
-    const sheetUrl = appState.settings.sheetUrl;
-    if (!sheetUrl) {
-        console.warn("[HEALTH] No API URL configured.");
-        updateSyncStatus('disconnected');
-        return false;
-    }
-    console.log("[HEALTH] Running health check...");
-    updateSyncStatus('syncing');
-    try {
-        const response = await fetch(sheetUrl, {
-            method: 'GET',
-            mode: 'cors',
-            cache: 'no-cache'
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const result = await response.json();
-        if (result.status === 'success') {
-            console.log("[HEALTH] Health check PASSED. Records count:", Array.isArray(result.data) ? result.data.length : 'unknown');
-            updateSyncStatus('success');
-            return true;
-        } else {
-            throw new Error(result.message || 'Unknown error from Apps Script');
-        }
-    } catch (err) {
-        console.error("[HEALTH] Health check FAILED:", err.message);
-        updateSyncStatus('error');
-        showToast('❌ Cannot reach Google Sheets API. Check your URL and deployment settings.', 'danger');
-        return false;
-    }
-}
-
-/**
- * fetchSharedRecords(shouldRender) — The main data loader.
- * Always fetches from Google Sheets (never from localStorage).
- *
- * KEY FIX: Uses ?t=timestamp cache-buster on every GET to prevent
- * Google Apps Script CDN from returning stale cached responses.
- *
- * KEY FIX: After loading sheet data, merges optimistic records that
- * were saved in the last 10 seconds. This prevents a race condition
- * where an immediate GET (before Apps Script propagates the save)
- * would overwrite the optimistic update and make the prayer disappear.
- *
- * @param {boolean} shouldRender - If true, calls renderAll() after loading.
- */
-async function fetchSharedRecords(shouldRender = false) {
-    const sheetUrl = appState.settings.sheetUrl;
-
-    if (!sheetUrl) {
-        console.warn("[FETCH] No API URL. Backend not connected. Records will be empty.");
-        updateSyncStatus('disconnected');
-        // Only clear records if they are empty — don't erase optimistic saves
-        if (Object.keys(appState.records).length === 0) appState.records = {};
-        if (shouldRender) renderAll();
-        return;
-    }
-
-    console.log("[FETCH] Fetching shared records from Google Sheets...");
-    updateSyncStatus('syncing');
-
-    // Add timestamp to bust Apps Script CDN cache — prevents stale GET responses
-    const fetchUrl = sheetUrl + (sheetUrl.includes('?') ? '&' : '?') + `t=${Date.now()}`;
-
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
-
-        const response = await fetch(fetchUrl, {
-            method: 'GET',
-            mode: 'cors',
-            cache: 'no-store', // Force browser to never serve from cache
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-
-        const result = await response.json();
-
-        if (result.status === 'success' && Array.isArray(result.data)) {
-            const sheetRecords = parseRecordsFromSheet(result.data);
-
-            // MERGE: Re-apply any optimistic records saved in the last 10 seconds
-            // that haven't propagated through Apps Script yet
-            const now = Date.now();
-            const OPTIMISTIC_TTL = 10000; // 10 seconds
-            Object.entries(appState.optimisticRecords || {}).forEach(([key, { record, savedAt }]) => {
-                if (now - savedAt < OPTIMISTIC_TTL) {
-                    // Still within TTL: keep optimistic record if sheet doesn't have it yet
-                    const [date, member, prayer] = key.split('_');
-                    const sheetHasIt = sheetRecords[date]?.[member]?.[prayer];
-                    if (!sheetHasIt) {
-                        console.log(`[FETCH] Preserving optimistic record: ${key}`);
-                        if (!sheetRecords[date]) sheetRecords[date] = {};
-                        if (!sheetRecords[date][member]) sheetRecords[date][member] = {};
-                        sheetRecords[date][member][prayer] = record;
-                    } else {
-                        // Sheet has it now — remove from optimistic tracking
-                        delete appState.optimisticRecords[key];
-                    }
-                } else {
-                    // TTL expired — remove from tracking
-                    delete appState.optimisticRecords[key];
-                }
-            });
-
-            appState.records = sheetRecords;
-
-            // Cache for diagnostics (not used as source of truth)
-            try { localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records)); } catch(e) {}
-            console.log(`[FETCH] Records loaded. Sheet rows: ${result.data.length}, Dates in memory: ${Object.keys(appState.records).length}`);
-
-            appState.lastSync = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            updateSyncStatus('success');
-            if (shouldRender) renderAll();
-        } else {
-            throw new Error(result.message || 'Unexpected response from Apps Script');
-        }
-    } catch (err) {
-        if (err.name === 'AbortError') {
-            console.error("[FETCH] Request timed out after 12 seconds.");
-            showToast('⏱️ Google Sheets request timed out. Apps Script may be slow. Try again.', 'danger');
-        } else {
-            console.error("[FETCH] Failed to load shared records:", err.message);
-            showToast('⚠️ ' + (t('settings.syncError') || 'Could not load shared records. Check your Google Sheets API URL.'), 'danger');
-        }
-        updateSyncStatus('error');
-        // Keep appState.records as-is — do NOT wipe data on network failure
-        if (shouldRender) renderAll();
-    }
-}
-
-/**
- * saveSharedPrayerRecord() — Saves or deletes a single prayer record in Google Sheets.
- * Uses action: 'save' (upsert by id) or action: 'delete'.
- * Duplicate prevention: Apps Script uses the composite id (date_member_prayer) to update-or-insert.
- */
-async function saveSharedPrayerRecord(date, member, prayer, record, action = 'save') {
-    const sheetUrl = appState.settings.sheetUrl;
-    if (!sheetUrl) {
-        console.error("[SAVE] No API URL. Cannot save to Google Sheets.");
-        return false;
-    }
-
-    const id = `${date}_${member}_${prayer}`;
-    console.log(`[SAVE] Action: ${action}, ID: ${id}`);
-
-    const payload = {
-        action: action,
-        passcode: appState.settings.sheetPasscode,
-        id: id
-    };
-
-    if (action === 'save') {
-        payload.record = {
-            id: id,
-            date: date,
-            member: member,
-            prayer: prayer,
-            status: record.status,
-            markedTime: record.time,
-            timestamp: record.timestamp,
-            onTime: record.status === 'On time' ? 'Yes' : 'No',
-            note: record.note || "",
-            updatedAt: new Date().toISOString()
-        };
-    }
-
-    try {
-        const response = await fetch(sheetUrl, {
-            method: 'POST',
-            mode: 'cors',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify(payload)
-        });
-
-        const result = await response.json();
-        if (result.status === 'success') {
-            console.log(`[SAVE] Success. Server message: ${result.message}`);
-            return true;
-        } else {
-            console.error(`[SAVE] Server returned error: ${result.message}`);
-            return false;
-        }
-    } catch (err) {
-        console.error("[SAVE] Network or parse error:", err.message);
-        return false;
-    }
-}
-
-async function refreshSharedRecords() {
-    await fetchSharedRecords(true); // shouldRender = true
-}
-
+// getTodayRecordsFromSharedState kept as alias for any template references
 function getTodayRecordsFromSharedState(member) {
-    return (appState.records[appState.currentDate] || {})[member] || {};
-}
-
-function parseRecordsFromSheet(dataArray) {
-    const records = {};
-    if (!Array.isArray(dataArray)) return records;
-    
-    dataArray.forEach(row => {
-        const d = row.date;
-        const m = row.member;
-        const p = row.prayer;
-        
-        if (!d || !m || !p) return;
-        
-        if (!records[d]) records[d] = {};
-        if (!records[d][m]) records[d][m] = {};
-        
-        records[d][m][p] = {
-            status: row.status || 'On time',
-            time: row.markedTime || row.time || '',
-            timestamp: Number(row.timestamp) || Date.now(),
-            note: row.note || ''
-        };
-    });
-    return records;
-}
-
-function updateSyncStatus(status) {
-    const desktopStatusText = document.getElementById('desktop-sync-text');
-    const desktopSyncIcon = document.getElementById('desktop-sync-icon');
-    const desktopIndicator = document.getElementById('desktop-sync-indicator');
-    
-    const mobileSyncIcon = document.getElementById('mobile-sync-icon');
-    const mobileIndicator = document.getElementById('mobile-refresh-btn');
-    
-    const settingsBadge = document.getElementById('sync-status-badge');
-    const syncLastRow = document.getElementById('sync-last-time-row');
-    const syncLastTime = document.getElementById('sync-last-time');
-    
-    if (appState.settings.sheetUrl) {
-        if (desktopIndicator) desktopIndicator.style.display = 'flex';
-        if (mobileIndicator) mobileIndicator.style.display = 'flex';
-        if (syncLastRow) syncLastRow.style.display = 'flex';
-        if (syncLastTime) syncLastTime.textContent = appState.lastSync || '-';
-    } else {
-        if (desktopIndicator) desktopIndicator.style.display = 'none';
-        if (mobileIndicator) mobileIndicator.style.display = 'none';
-        if (syncLastRow) syncLastRow.style.display = 'none';
-        if (settingsBadge) {
-            settingsBadge.className = 'badge';
-            settingsBadge.textContent = t('settings.statusDisconnected') || 'Disconnected';
-            settingsBadge.setAttribute('data-i18n', 'settings.statusDisconnected');
-        }
-        return;
-    }
-    
-    if (status === 'syncing') {
-        if (desktopStatusText) {
-            desktopStatusText.textContent = t('settings.statusSyncing') || 'Syncing...';
-            desktopStatusText.setAttribute('data-i18n', 'settings.statusSyncing');
-        }
-        if (desktopSyncIcon) {
-            desktopSyncIcon.className = 'fas fa-sync-alt fa-spin-custom';
-            desktopSyncIcon.style.color = 'var(--text-secondary)';
-        }
-        if (mobileSyncIcon) {
-            mobileSyncIcon.className = 'fas fa-sync-alt fa-spin-custom';
-            mobileSyncIcon.style.color = '';
-        }
-        
-        if (settingsBadge) {
-            settingsBadge.className = 'badge badge-warning';
-            settingsBadge.textContent = t('settings.statusSyncing') || 'Syncing...';
-            settingsBadge.setAttribute('data-i18n', 'settings.statusSyncing');
-        }
-    } else if (status === 'success') {
-        if (desktopStatusText) {
-            desktopStatusText.textContent = t('settings.statusConnected') || 'Connected';
-            desktopStatusText.setAttribute('data-i18n', 'settings.statusConnected');
-        }
-        if (desktopSyncIcon) {
-            desktopSyncIcon.className = 'fas fa-check-circle';
-            desktopSyncIcon.style.color = '#2e7d32'; // emerald green
-        }
-        if (mobileSyncIcon) {
-            mobileSyncIcon.className = 'fas fa-check-circle';
-            mobileSyncIcon.style.color = '';
-        }
-        
-        if (settingsBadge) {
-            settingsBadge.className = 'badge badge-success';
-            settingsBadge.textContent = t('settings.statusConnected') || 'Connected';
-            settingsBadge.setAttribute('data-i18n', 'settings.statusConnected');
-        }
-    } else if (status === 'error') {
-        if (desktopStatusText) {
-            desktopStatusText.textContent = t('settings.statusError') || 'Sync Error';
-            desktopStatusText.setAttribute('data-i18n', 'settings.statusError');
-        }
-        if (desktopSyncIcon) {
-            desktopSyncIcon.className = 'fas fa-exclamation-triangle';
-            desktopSyncIcon.style.color = '#d32f2f'; // danger/red
-        }
-        if (mobileSyncIcon) {
-            mobileSyncIcon.className = 'fas fa-exclamation-triangle';
-            mobileSyncIcon.style.color = '';
-        }
-        
-        if (settingsBadge) {
-            settingsBadge.className = 'badge badge-danger';
-            settingsBadge.textContent = t('settings.statusError') || 'Sync Error';
-            settingsBadge.setAttribute('data-i18n', 'settings.statusError');
-        }
-    }
-}
-
-async function resetCloudDatabase() {
-    if (!appState.settings.sheetUrl) return;
-    
-    const payload = {
-        action: "reset",
-        passcode: appState.settings.sheetPasscode
-    };
-    
-    try {
-        const response = await fetch(appState.settings.sheetUrl, {
-            method: 'POST',
-            mode: 'cors',
-            headers: {
-                'Content-Type': 'text/plain;charset=utf-8'
-            },
-            body: JSON.stringify(payload)
-        });
-        
-        const result = await response.json();
-        if (result.status !== 'success') {
-            throw new Error(result.message || 'Reset failed');
-        }
-        console.log("Cloud database reset successful");
-    } catch (err) {
-        console.error("Cloud database reset failed:", err);
-        showToast(t('settings.syncError') || 'Error syncing with cloud database', 'danger');
-    }
-}
-
-function convertNestedRecordsToFlat(recordsObj) {
-    const flat = [];
-    Object.keys(recordsObj).forEach(date => {
-        Object.keys(recordsObj[date]).forEach(member => {
-            Object.keys(recordsObj[date][member]).forEach(prayer => {
-                const record = recordsObj[date][member][prayer];
-                const id = `${date}_${member}_${prayer}`;
-                flat.push({
-                    id: id,
-                    date: date,
-                    member: member,
-                    prayer: prayer,
-                    status: record.status || "On time",
-                    markedTime: record.time || "",
-                    timestamp: record.timestamp || Date.now(),
-                    onTime: record.status === 'On time' ? 'Yes' : 'No',
-                    note: record.note || "",
-                    updatedAt: new Date().toISOString()
-                });
-            });
-        });
-    });
-    return flat;
-}
-
-async function importRecordsToCloud(flatRecords) {
-    if (!appState.settings.sheetUrl) return;
-    
-    const payload = {
-        action: "import",
-        passcode: appState.settings.sheetPasscode,
-        records: flatRecords
-    };
-    
-    try {
-        const response = await fetch(appState.settings.sheetUrl, {
-            method: 'POST',
-            mode: 'cors',
-            headers: {
-                'Content-Type': 'text/plain;charset=utf-8'
-            },
-            body: JSON.stringify(payload)
-        });
-        
-        const result = await response.json();
-        if (result.status !== 'success') {
-            throw new Error(result.message || 'Import failed');
-        }
-        console.log("Cloud database import successful, count:", result.count);
-    } catch (err) {
-        console.error("Cloud database import failed:", err);
-        showToast(t('settings.syncError') || 'Error syncing with cloud database', 'danger');
-    }
+    return DataStore.getTodayRecords(member);
 }
