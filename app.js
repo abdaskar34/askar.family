@@ -77,6 +77,9 @@ async function initApp() {
     const savedPage = window.location.hash.replace("#", "") || localStorage.getItem("askarFamilyCurrentPage") || "dashboard";
     navigateTo(savedPage);
 
+    // Initialize Floating Dock Navigation
+    initializeDock();
+
     // Intervals
     startNextPrayerCountdown();
     setInterval(checkDayReset, 60000);
@@ -937,7 +940,29 @@ window.addEventListener('languageChanged', () => {
     applyTranslations();
     startSidebarClock(); // Update date locale
     renderAll();
+    if (window.appDock) {
+        window.appDock.updateLabels(t);
+    }
 });
+
+function initializeDock() {
+    const items = [
+        { icon: '<i class="fas fa-th-large"></i>', label: t('nav.dashboard'), translationKey: 'nav.dashboard', page: 'dashboard', onClick: () => navigateTo('dashboard') },
+        { icon: '<i class="fas fa-users"></i>', label: t('nav.family'), translationKey: 'nav.family', page: 'family', onClick: () => navigateTo('family') },
+        { icon: '<i class="fas fa-history"></i>', label: t('nav.history'), translationKey: 'nav.history', page: 'history', onClick: () => navigateTo('history') },
+        { icon: '<i class="fas fa-chart-line"></i>', label: t('nav.statistics'), translationKey: 'nav.statistics', page: 'statistics', onClick: () => navigateTo('statistics') },
+        { icon: '<i class="fas fa-cog"></i>', label: t('nav.settings'), translationKey: 'nav.settings', page: 'settings', onClick: () => navigateTo('settings') }
+    ];
+    window.appDock = new Dock({
+        items: items,
+        panelHeight: 62,
+        baseItemSize: 45,
+        magnification: 62,
+        distance: 180
+    });
+    // Set initial active state
+    updateActiveNav(appState.currentPage || 'dashboard');
+}
 
 function exportJSON() { const data = JSON.stringify(appState.records, null, 2); const blob = new Blob([data], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `askar_prayer_backup_${appState.currentDate}.json`; a.click(); }
 function exportCSV() { const filtered = getFilteredHistory(); let csv = 'Date,Member,Prayer,Status,Time\n'; filtered.forEach(r => { csv += `${r.date},${r.member},${r.prayer},${r.status},${r.time}\n`; }); const blob = new Blob([csv], { type: 'text/csv' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `askar_prayer_history_${appState.currentDate}.csv`; a.click(); }
