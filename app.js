@@ -99,13 +99,14 @@ async function initApp() {
     startNextPrayerCountdown();
     setInterval(checkDayReset, 60000);
 
-    // Auto-sync every 30 seconds if backend is connected
+    // Auto-sync every 15 seconds if backend is connected
+    // Renders all pages after each sync so all family members see live data
     setInterval(async () => {
-        if (appState.settings.sheetUrl) {
+        if (appState.settings.sheetUrl && !appState.isSaving) {
             console.log("[AUTO-SYNC] Running background sync...");
-            await fetchSharedRecords(false); // false = background refresh, renders silently
+            await fetchSharedRecords(true); // true = always render after
         }
-    }, 30000);
+    }, 15000);
 
     attachEventListeners();
 
@@ -792,7 +793,16 @@ function renderMemberChecklist(m) {
     });
 }
 
+// Track which records were optimistically saved so we don't lose them on stale GET
+appState.optimisticRecords = {};
+
 async function markPrayer(m, p) {
+    // Prevent double-click / concurrent saves
+    if (appState.isSaving) {
+        console.warn("[MARK] Already saving, ignoring duplicate click.");
+        return;
+    }
+
     const now = new Date(), nm = now.getHours() * 60 + now.getMinutes();
     let em = 1440;
     const ni = CONFIG.prayers.indexOf(p) + 1;
@@ -805,70 +815,107 @@ async function markPrayer(m, p) {
 
     const sheetUrl = appState.settings.sheetUrl;
     if (!sheetUrl) {
-        // No backend configured: show clear warning and update locally only
         console.warn("[MARK] No API URL configured. Backend not connected. Saving locally only.");
         if (!appState.records[appState.currentDate]) appState.records[appState.currentDate] = {};
         if (!appState.records[appState.currentDate][m]) appState.records[appState.currentDate][m] = {};
         appState.records[appState.currentDate][m][p] = record;
-        localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records));
-        showToast(`⚠️ ${m} ${t('messages.marked')} ${t('prayer.' + p.toLowerCase())} — ${t('settings.statusDisconnected') || 'Backend not connected. Data is local only.'}`, 'warning');
+        showToast(`⚠️ ${m} ${t('messages.marked')} ${t('prayer.' + p.toLowerCase())} — ${t('settings.statusDisconnected') || 'Backend not connected.'}`, 'warning');
         refreshUI(m);
         return;
     }
 
-    console.log(`[MARK] Saving prayer: ${m} / ${p} / ${s}`);
+    // STEP 1: Optimistic update — update appState.records immediately so UI is instant
+    console.log(`[MARK] Optimistically updating UI for: ${m} / ${p} / ${s}`);
+    if (!appState.records[appState.currentDate]) appState.records[appState.currentDate] = {};
+    if (!appState.records[appState.currentDate][m]) appState.records[appState.currentDate][m] = {};
+    appState.records[appState.currentDate][m][p] = record;
+
+    // Track this as an optimistic save so delayed re-fetch doesn't erase it
+    const optKey = `${appState.currentDate}_${m}_${p}`;
+    appState.optimisticRecords[optKey] = { record, savedAt: Date.now() };
+
+    // STEP 2: Render UI immediately (user sees result at once)
+    refreshUI(m);
     updateSyncStatus('syncing');
     showToast(t('settings.statusSyncing') || 'Saving to Google Sheet...');
 
+    // STEP 3: Save to Google Sheet in background
+    appState.isSaving = true;
     const success = await saveSharedPrayerRecord(appState.currentDate, m, p, record, 'save');
+    appState.isSaving = false;
+
     if (success) {
-        showToast(`${m} ${t('messages.marked')} ${t('prayer.' + p.toLowerCase())} ${t('status.' + (s === 'On time' ? 'onTime' : s.toLowerCase()))}!`);
-        // Immediately update local state so UI is snappy, then confirm from server
-        if (!appState.records[appState.currentDate]) appState.records[appState.currentDate] = {};
-        if (!appState.records[appState.currentDate][m]) appState.records[appState.currentDate][m] = {};
-        appState.records[appState.currentDate][m][p] = record;
-        refreshUI(m);
-        // Then re-fetch from server to confirm and pick up any other changes
-        await fetchSharedRecords(false);
-        refreshUI(m);
+        console.log(`[MARK] Save confirmed. Scheduling delayed re-fetch in 3s...`);
+        showToast(`✅ ${m} ${t('messages.marked')} ${t('prayer.' + p.toLowerCase())} ${t('status.' + (s === 'On time' ? 'onTime' : s.toLowerCase()))}!`);
+        updateSyncStatus('success');
+        appState.lastSync = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        // STEP 4: Delayed re-fetch — give Apps Script 3 seconds to process before reading back
+        // (Immediate fetch returns stale cached data from Apps Script CDN)
+        setTimeout(async () => {
+            console.log("[MARK] Delayed re-fetch after save...");
+            await fetchSharedRecords(true);
+        }, 3000);
     } else {
-        // Save failed: do NOT silently save locally. Show clear error.
-        console.error("[MARK] Save to Google Sheets FAILED. Not saving locally.");
+        // Save failed: revert the optimistic update
+        console.error("[MARK] Save to Google Sheets FAILED. Reverting optimistic update.");
+        delete appState.records[appState.currentDate]?.[m]?.[p];
+        delete appState.optimisticRecords[optKey];
+        refreshUI(m); // re-render to show the reverted state
         showToast('❌ ' + (t('settings.syncError') || 'Failed to save to Google Sheets. Please check your API URL.'), 'danger');
         updateSyncStatus('error');
     }
 }
 
 async function undoPrayer(m, p) {
+    if (appState.isSaving) {
+        console.warn("[UNDO] Already saving, ignoring.");
+        return;
+    }
+
     const sheetUrl = appState.settings.sheetUrl;
     if (!sheetUrl) {
         console.warn("[UNDO] No API URL configured. Backend not connected.");
         if (appState.records[appState.currentDate]?.[m]?.[p]) {
             delete appState.records[appState.currentDate][m][p];
-            localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records));
             showToast(`⚠️ ${t('family.undo')}: ${t('prayer.' + p.toLowerCase())} — Backend not connected. Local only.`, 'warning');
             refreshUI(m);
         }
         return;
     }
 
-    console.log(`[UNDO] Deleting prayer: ${m} / ${p}`);
+    // STEP 1: Optimistic removal
+    console.log(`[UNDO] Optimistically removing: ${m} / ${p}`);
+    const optKey = `${appState.currentDate}_${m}_${p}`;
+    const backup = appState.records[appState.currentDate]?.[m]?.[p]; // backup in case save fails
+    if (backup) delete appState.records[appState.currentDate][m][p];
+    delete appState.optimisticRecords[optKey];
+    refreshUI(m); // immediate UI update
     updateSyncStatus('syncing');
     showToast(t('settings.statusSyncing') || 'Removing from Google Sheet...');
 
+    // STEP 2: Delete from sheet
+    appState.isSaving = true;
     const success = await saveSharedPrayerRecord(appState.currentDate, m, p, null, 'delete');
+    appState.isSaving = false;
+
     if (success) {
-        showToast(`${t('family.undo')}: ${t('prayer.' + p.toLowerCase())}`);
-        // Immediately update local state
-        if (appState.records[appState.currentDate]?.[m]?.[p]) {
-            delete appState.records[appState.currentDate][m][p];
+        showToast(`✅ ${t('family.undo')}: ${t('prayer.' + p.toLowerCase())}`);
+        updateSyncStatus('success');
+        appState.lastSync = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        // Delayed re-fetch
+        setTimeout(async () => {
+            console.log("[UNDO] Delayed re-fetch after delete...");
+            await fetchSharedRecords(true);
+        }, 3000);
+    } else {
+        // Revert: restore the deleted record
+        console.error("[UNDO] Delete from Google Sheets FAILED. Reverting.");
+        if (backup) {
+            if (!appState.records[appState.currentDate]) appState.records[appState.currentDate] = {};
+            if (!appState.records[appState.currentDate][m]) appState.records[appState.currentDate][m] = {};
+            appState.records[appState.currentDate][m][p] = backup;
         }
         refreshUI(m);
-        // Then confirm from server
-        await fetchSharedRecords(false);
-        refreshUI(m);
-    } else {
-        console.error("[UNDO] Delete from Google Sheets FAILED.");
         showToast('❌ ' + (t('settings.syncError') || 'Failed to remove from Google Sheets.'), 'danger');
         updateSyncStatus('error');
     }
@@ -1199,6 +1246,15 @@ async function runHealthCheck() {
 /**
  * fetchSharedRecords(shouldRender) — The main data loader.
  * Always fetches from Google Sheets (never from localStorage).
+ *
+ * KEY FIX: Uses ?t=timestamp cache-buster on every GET to prevent
+ * Google Apps Script CDN from returning stale cached responses.
+ *
+ * KEY FIX: After loading sheet data, merges optimistic records that
+ * were saved in the last 10 seconds. This prevents a race condition
+ * where an immediate GET (before Apps Script propagates the save)
+ * would overwrite the optimistic update and make the prayer disappear.
+ *
  * @param {boolean} shouldRender - If true, calls renderAll() after loading.
  */
 async function fetchSharedRecords(shouldRender = false) {
@@ -1207,7 +1263,8 @@ async function fetchSharedRecords(shouldRender = false) {
     if (!sheetUrl) {
         console.warn("[FETCH] No API URL. Backend not connected. Records will be empty.");
         updateSyncStatus('disconnected');
-        appState.records = {}; // Do NOT load from localStorage — make it obvious backend is needed
+        // Only clear records if they are empty — don't erase optimistic saves
+        if (Object.keys(appState.records).length === 0) appState.records = {};
         if (shouldRender) renderAll();
         return;
     }
@@ -1215,22 +1272,57 @@ async function fetchSharedRecords(shouldRender = false) {
     console.log("[FETCH] Fetching shared records from Google Sheets...");
     updateSyncStatus('syncing');
 
+    // Add timestamp to bust Apps Script CDN cache — prevents stale GET responses
+    const fetchUrl = sheetUrl + (sheetUrl.includes('?') ? '&' : '?') + `t=${Date.now()}`;
+
     try {
-        const response = await fetch(sheetUrl, {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
+
+        const response = await fetch(fetchUrl, {
             method: 'GET',
             mode: 'cors',
-            cache: 'no-cache'
+            cache: 'no-store', // Force browser to never serve from cache
+            signal: controller.signal
         });
+        clearTimeout(timeoutId);
 
         if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
 
         const result = await response.json();
 
         if (result.status === 'success' && Array.isArray(result.data)) {
-            appState.records = parseRecordsFromSheet(result.data);
-            // Save a cache copy for diagnostic purposes (not used as source of truth)
+            const sheetRecords = parseRecordsFromSheet(result.data);
+
+            // MERGE: Re-apply any optimistic records saved in the last 10 seconds
+            // that haven't propagated through Apps Script yet
+            const now = Date.now();
+            const OPTIMISTIC_TTL = 10000; // 10 seconds
+            Object.entries(appState.optimisticRecords || {}).forEach(([key, { record, savedAt }]) => {
+                if (now - savedAt < OPTIMISTIC_TTL) {
+                    // Still within TTL: keep optimistic record if sheet doesn't have it yet
+                    const [date, member, prayer] = key.split('_');
+                    const sheetHasIt = sheetRecords[date]?.[member]?.[prayer];
+                    if (!sheetHasIt) {
+                        console.log(`[FETCH] Preserving optimistic record: ${key}`);
+                        if (!sheetRecords[date]) sheetRecords[date] = {};
+                        if (!sheetRecords[date][member]) sheetRecords[date][member] = {};
+                        sheetRecords[date][member][prayer] = record;
+                    } else {
+                        // Sheet has it now — remove from optimistic tracking
+                        delete appState.optimisticRecords[key];
+                    }
+                } else {
+                    // TTL expired — remove from tracking
+                    delete appState.optimisticRecords[key];
+                }
+            });
+
+            appState.records = sheetRecords;
+
+            // Cache for diagnostics (not used as source of truth)
             try { localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records)); } catch(e) {}
-            console.log(`[FETCH] Shared records loaded. Total rows: ${result.data.length}, Dates: ${Object.keys(appState.records).length}`);
+            console.log(`[FETCH] Records loaded. Sheet rows: ${result.data.length}, Dates in memory: ${Object.keys(appState.records).length}`);
 
             appState.lastSync = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
             updateSyncStatus('success');
@@ -1239,11 +1331,15 @@ async function fetchSharedRecords(shouldRender = false) {
             throw new Error(result.message || 'Unexpected response from Apps Script');
         }
     } catch (err) {
-        console.error("[FETCH] Failed to load shared records:", err.message);
+        if (err.name === 'AbortError') {
+            console.error("[FETCH] Request timed out after 12 seconds.");
+            showToast('⏱️ Google Sheets request timed out. Apps Script may be slow. Try again.', 'danger');
+        } else {
+            console.error("[FETCH] Failed to load shared records:", err.message);
+            showToast('⚠️ ' + (t('settings.syncError') || 'Could not load shared records. Check your Google Sheets API URL.'), 'danger');
+        }
         updateSyncStatus('error');
-        // Do NOT fall back to localStorage — that would give false impression of shared data.
-        // Keep appState.records as-is (empty on first load, or last known from previous fetch).
-        showToast('⚠️ ' + (t('settings.syncError') || 'Could not load shared records. Check your Google Sheets API URL.'), 'danger');
+        // Keep appState.records as-is — do NOT wipe data on network failure
         if (shouldRender) renderAll();
     }
 }
