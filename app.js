@@ -41,10 +41,9 @@ const firebaseConfig = {
     authDomain: "askar-family-prayer-tracker.firebaseapp.com",
     databaseURL: "https://askar-family-prayer-tracker-default-rtdb.europe-west1.firebasedatabase.app/",
     projectId: "askar-family-prayer-tracker",
-    storageBucket: "askar-family-prayer-tracker.appspot.com",
-    messagingSenderId: "37424564883",
-    appId: "1:37424564883:web:5de5d911b333798939c0bb",
-    measurementId: "G-J9C2D4J2J4"
+    storageBucket: "askar-family-prayer-tracker.firebasestorage.app",
+    messagingSenderId: "186603865505",
+    appId: "1:186603865505:web:b94d99b078c8f1c982f7e0"
 };
 
 let db = null;
@@ -107,17 +106,47 @@ function updateFirebaseStatusUI(status, details = '') {
     }
 }
 
+function transformFirebaseToAppState(firebaseData) {
+    if (!firebaseData) return {};
+    const localRecords = {};
+    for (const date in firebaseData) {
+        localRecords[date] = {};
+        for (const member in firebaseData[date]) {
+            localRecords[date][member] = {};
+            for (const prayer in firebaseData[date][member]) {
+                const rec = firebaseData[date][member][prayer];
+                if (rec) {
+                    localRecords[date][member][prayer] = {
+                        status: rec.onTime !== undefined ? (rec.onTime ? 'On time' : 'Late') : (rec.status || 'On time'),
+                        time: rec.markedTime || rec.time || '',
+                        timestamp: rec.timestamp || Date.now()
+                    };
+                }
+            }
+        }
+    }
+    return localRecords;
+}
+
 function initFirebase() {
     updateFirebaseStatusUI('connecting');
+    if (!firebaseConfig.databaseURL) {
+        console.error("[FIREBASE] ERROR: database URL missing");
+        updateFirebaseStatusUI('error', 'Database URL missing');
+        return;
+    }
     try {
+        console.log("[FIREBASE] Firebase initializing...");
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
         db = firebase.database();
+        console.log("[FIREBASE] Firebase initialized");
 
+        console.log("[FIREBASE] Anonymous auth started");
         firebase.auth().signInAnonymously()
             .then((userCredential) => {
-                console.log("[FIREBASE] Anonymous auth successful. UID:", userCredential.user.uid);
+                console.log("[FIREBASE] Anonymous auth success with UID:", userCredential.user.uid);
                 subscribeToFirebaseRecords();
             })
             .catch((error) => {
@@ -134,17 +163,24 @@ function subscribeToFirebaseRecords() {
     if (!db) return;
     updateFirebaseStatusUI('syncing');
 
-    db.ref('records').on('value', (snapshot) => {
-        console.log("[FIREBASE] Data updated from server.");
+    console.log("[FIREBASE] Listening to prayerRecords");
+    db.ref('prayerRecords').on('value', (snapshot) => {
+        console.log("[FIREBASE] Firebase snapshot received");
         const val = snapshot.val();
-        appState.records = val || {};
         
-        // Cache locally for offline usage
-        try {
-            localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records));
-        } catch (e) {
-            console.error('[DataStore] Failed to cache records:', e);
+        // Count records
+        let recCount = 0;
+        if (val) {
+            for (const d in val) {
+                for (const m in val[d]) {
+                    recCount += Object.keys(val[d][m] || {}).length;
+                }
+            }
         }
+        console.log(`[FIREBASE] Number of records loaded: ${recCount}`);
+
+        appState.records = transformFirebaseToAppState(val);
+        console.log("[FIREBASE] Rendering from Firebase records");
 
         updateFirebaseStatusUI('connected');
 
@@ -160,39 +196,26 @@ function subscribeToFirebaseRecords() {
             renderStats();
         }
     }, (error) => {
-        console.error("[FIREBASE] Subscription failed:", error);
+        console.error("[FIREBASE] Listener failed / Subscription failed:", error);
+        if (error.code === 'PERMISSION_DENIED') {
+            console.error("[FIREBASE] ERROR: permission_denied. Ensure Anonymous Auth is enabled and rules allow reading 'prayerRecords'.");
+        }
         updateFirebaseStatusUI('error', error.message);
     });
 }
 
 // =============================================================================
 // DATASTORE ADAPTER
-// Firebase Realtime Database with local storage cache backup.
+// Firebase Realtime Database.
+// No local storage is used for prayer records.
 // =============================================================================
 
 const DataStore = {
     /**
-     * Load all prayer records from localStorage cache into appState.records initially.
+     * Load all prayer records initially (no-op since records come only from Firebase).
      */
     loadRecords() {
-        try {
-            const saved = localStorage.getItem(CONFIG.storageKey);
-            appState.records = saved ? JSON.parse(saved) : {};
-        } catch (e) {
-            console.error('[DataStore] Failed to load records:', e);
-            appState.records = {};
-        }
-    },
-
-    /**
-     * Persist appState.records to localStorage cache.
-     */
-    _persist() {
-        try {
-            localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records));
-        } catch (e) {
-            console.error('[DataStore] Failed to persist records:', e);
-        }
+        appState.records = {};
     },
 
     /**
@@ -203,19 +226,36 @@ const DataStore = {
      * @param {object} record - { status, time, timestamp }
      */
     saveRecord(date, member, prayer, record) {
+        // Optimize local memory cache immediately for UI responsiveness
         if (!appState.records[date]) appState.records[date] = {};
         if (!appState.records[date][member]) appState.records[date][member] = {};
         appState.records[date][member][prayer] = record;
         
+        const path = `prayerRecords/${date}/${member}/${prayer}`;
+        const firebaseRecord = {
+            date: date,
+            member: member,
+            prayer: prayer,
+            status: "completed",
+            markedTime: record.time,
+            timestamp: record.timestamp,
+            onTime: record.status === 'On time',
+            note: "",
+            updatedAt: Date.now()
+        };
+
         // Write to Firebase
         if (db) {
-            db.ref(`records/${date}/${member}/${prayer}`).set(record)
+            console.log(`[FIREBASE] Saving record to Firebase path: ${path}`, firebaseRecord);
+            db.ref(path).set(firebaseRecord)
+                .then(() => {
+                    console.log("[FIREBASE] Save success");
+                })
                 .catch(error => {
-                    console.error('[DataStore] Firebase set failed:', error);
+                    console.error('[FIREBASE] Save failed:', error);
                     showToast("Firebase write failed: " + error.message, "danger");
                 });
         }
-        this._persist();
     },
 
     /**
@@ -224,16 +264,20 @@ const DataStore = {
     deleteRecord(date, member, prayer) {
         if (appState.records[date]?.[member]?.[prayer]) {
             delete appState.records[date][member][prayer];
-            
-            // Remove from Firebase
-            if (db) {
-                db.ref(`records/${date}/${member}/${prayer}`).remove()
-                    .catch(error => {
-                        console.error('[DataStore] Firebase remove failed:', error);
-                        showToast("Firebase delete failed: " + error.message, "danger");
-                    });
-            }
-            this._persist();
+        }
+        
+        const path = `prayerRecords/${date}/${member}/${prayer}`;
+        // Remove from Firebase
+        if (db) {
+            console.log(`[FIREBASE] Deleting record at Firebase path: ${path}`);
+            db.ref(path).remove()
+                .then(() => {
+                    console.log("[FIREBASE] Deletion success");
+                })
+                .catch(error => {
+                    console.error('[FIREBASE] Deletion failed:', error);
+                    showToast("Firebase delete failed: " + error.message, "danger");
+                });
         }
     },
 
@@ -249,13 +293,16 @@ const DataStore = {
      */
     clearAll() {
         appState.records = {};
-        this._persist();
 
         // Clear in Firebase
         if (db) {
-            db.ref('records').remove()
+            console.log("[FIREBASE] Clearing all records in Firebase under 'prayerRecords'");
+            db.ref('prayerRecords').remove()
+                .then(() => {
+                    console.log("[FIREBASE] Clear success");
+                })
                 .catch(error => {
-                    console.error('[DataStore] Firebase clear failed:', error);
+                    console.error('[FIREBASE] Clear failed:', error);
                     showToast("Firebase clear failed: " + error.message, "danger");
                 });
         }
@@ -265,14 +312,44 @@ const DataStore = {
      * Import records (merges with existing).
      */
     importRecords(newRecords) {
-        appState.records = { ...appState.records, ...newRecords };
-        this._persist();
+        // Transform incoming local records structure to Firebase database schema
+        const transformed = {};
+        for (const date in newRecords) {
+            transformed[date] = {};
+            for (const member in newRecords[date]) {
+                transformed[date][member] = {};
+                for (const prayer in newRecords[date][member]) {
+                    const rec = newRecords[date][member][prayer];
+                    if (rec) {
+                        transformed[date][member][prayer] = {
+                            date: date,
+                            member: member,
+                            prayer: prayer,
+                            status: "completed",
+                            markedTime: rec.time || '',
+                            timestamp: rec.timestamp || Date.now(),
+                            onTime: rec.status === 'On time',
+                            note: rec.note || '',
+                            updatedAt: Date.now()
+                        };
+                    }
+                }
+            }
+        }
 
-        // Set in Firebase
+        // Merge locally
+        appState.records = { ...appState.records, ...newRecords };
+
+        // Set in Firebase (using update to merge at date level)
         if (db) {
-            db.ref('records').set(appState.records)
+            console.log("[FIREBASE] Importing and writing batch records to Firebase.");
+            db.ref('prayerRecords').update(transformed)
+                .then(() => {
+                    console.log("[FIREBASE] Import success");
+                    showToast(t('messages.restored') || 'Backup restored successfully.');
+                })
                 .catch(error => {
-                    console.error('[DataStore] Firebase import failed:', error);
+                    console.error('[FIREBASE] Import failed:', error);
                     showToast("Firebase import failed: " + error.message, "danger");
                 });
         }
