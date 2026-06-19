@@ -1250,3 +1250,42 @@ body.dark-mode .iridescence-bg-layer2 {
         animation: none !important;
     }
 }
+
+/* Database Sync styles */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+.fa-spin-custom {
+    animation: spin 1.2s linear infinite !important;
+}
+.btn-icon-small {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+    border-radius: 50%;
+}
+.btn-icon-small:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--primary-color);
+}
+body.dark-mode .btn-icon-small:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--accent-color);
+}
+.db-sync-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 20px;
+    background: var(--input-bg);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+}

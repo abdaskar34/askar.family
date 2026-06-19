@@ -18,7 +18,9 @@ const CONFIG = {
 const appState = {
     language: "en",
     settings: {
-        darkMode: false
+        darkMode: false,
+        sheetUrl: "",
+        sheetPasscode: ""
     },
     prayerTimes: null,
     prayerTimeSource: "default",
@@ -183,6 +185,11 @@ function loadRecords() {
         const saved = localStorage.getItem(CONFIG.storageKey);
         if (saved) appState.records = JSON.parse(saved);
     } catch (e) { appState.records = {}; }
+    
+    // Background cloud fetch if URL is configured
+    if (appState.settings.sheetUrl) {
+        syncCloudDatabase().catch(err => console.error("Initial sync error:", err));
+    }
 }
 
 function saveToStorage() {
@@ -714,6 +721,13 @@ function renderSettings() {
     const s = appState.settings;
     const dmEl = document.getElementById('setting-dark-mode');
     if (dmEl) dmEl.checked = !!s.darkMode;
+    
+    const sheetUrlEl = document.getElementById('setting-sheet-url');
+    const sheetPasscodeEl = document.getElementById('setting-sheet-passcode');
+    if (sheetUrlEl) sheetUrlEl.value = s.sheetUrl || '';
+    if (sheetPasscodeEl) sheetPasscodeEl.value = s.sheetPasscode || '';
+    
+    updateSyncStatus(s.sheetUrl ? 'success' : 'disconnected');
 }
 
 // --- Modals ---
@@ -759,9 +773,19 @@ function markPrayer(m, p) {
     let em = 1440; const ni = CONFIG.prayers.indexOf(p) + 1; if (ni < CONFIG.prayers.length) { const [nh, nmm] = appState.prayerTimes[CONFIG.prayers[ni]].split(':').map(Number); em = nh * 60 + nmm; }
     const s = nm <= em ? 'On time' : 'Late';
     if (!appState.records[appState.currentDate]) appState.records[appState.currentDate] = {}; if (!appState.records[appState.currentDate][m]) appState.records[appState.currentDate][m] = {};
-    appState.records[appState.currentDate][m][p] = { status: s, time: now.toLocaleTimeString([], { hour12: false }), timestamp: now.getTime() };
+    
+    const record = { status: s, time: now.toLocaleTimeString([], { hour12: false }), timestamp: now.getTime() };
+    appState.records[appState.currentDate][m][p] = record;
+    
     saveToStorage(); showToast(`${m} ${t('messages.marked')} ${t('prayer.' + p.toLowerCase())} ${t('status.' + (s === 'On time' ? 'onTime' : s.toLowerCase()))}!`);
     refreshUI(m);
+    
+    // Background cloud fetch/write
+    if (appState.settings.sheetUrl) {
+        saveRecordToCloud(appState.currentDate, m, p, record).then(() => {
+            updateSyncStatus('success');
+        });
+    }
 }
 
 function undoPrayer(m, p) {
@@ -770,6 +794,13 @@ function undoPrayer(m, p) {
         saveToStorage();
         showToast(`${t('family.undo')}: ${t('prayer.' + p.toLowerCase())}`);
         refreshUI(m);
+        
+        // Background cloud delete
+        if (appState.settings.sheetUrl) {
+            deleteRecordFromCloud(appState.currentDate, m, p).then(() => {
+                updateSyncStatus('success');
+            });
+        }
     }
 }
 
@@ -883,13 +914,19 @@ function attachEventListeners() {
             clearInput.focus();
         };
         
-        const handleConfirm = () => {
+        const handleConfirm = async () => {
             if (clearInput.value === 'askar12345') {
                 appState.records = {};
                 saveToStorage();
                 renderAll();
                 showToast(t('messages.resetDone'));
                 clearModal.classList.remove('active');
+                
+                // Cloud reset
+                if (appState.settings.sheetUrl) {
+                    await resetCloudDatabase();
+                    updateSyncStatus('success');
+                }
             } else {
                 clearError.textContent = t('settings.wrongPassword');
                 clearError.style.display = 'block';
@@ -925,6 +962,43 @@ function attachEventListeners() {
     const gtf = document.getElementById('stats-go-to-family-btn');
     if (gtf) {
         gtf.onclick = () => navigateTo('family');
+    }
+    
+    // Google Sheets save settings click handler
+    const saveConnectionBtn = document.getElementById('btn-save-sheet-settings');
+    if (saveConnectionBtn) {
+        saveConnectionBtn.onclick = async () => {
+            const urlEl = document.getElementById('setting-sheet-url');
+            const passcodeEl = document.getElementById('setting-sheet-passcode');
+            if (urlEl && passcodeEl) {
+                appState.settings.sheetUrl = urlEl.value.trim();
+                appState.settings.sheetPasscode = passcodeEl.value.trim();
+                saveToStorage();
+                showToast(t('messages.settingsSaved') || 'Settings saved successfully.');
+                
+                if (appState.settings.sheetUrl) {
+                    await syncCloudDatabase();
+                } else {
+                    updateSyncStatus('disconnected');
+                }
+            }
+        };
+    }
+
+    // Manual Refresh handlers
+    const desktopRefreshBtn = document.getElementById('desktop-refresh-btn');
+    if (desktopRefreshBtn) {
+        desktopRefreshBtn.onclick = async () => {
+            await syncCloudDatabase();
+            showToast(t('settings.syncSuccess') || 'Successfully synchronized with Google Sheet');
+        };
+    }
+    const mobileRefreshBtn = document.getElementById('mobile-refresh-btn');
+    if (mobileRefreshBtn) {
+        mobileRefreshBtn.onclick = async () => {
+            await syncCloudDatabase();
+            showToast(t('settings.syncSuccess') || 'Successfully synchronized with Google Sheet');
+        };
     }
 }
 
@@ -966,4 +1040,325 @@ function initializeDock() {
 
 function exportJSON() { const data = JSON.stringify(appState.records, null, 2); const blob = new Blob([data], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `askar_prayer_backup_${appState.currentDate}.json`; a.click(); }
 function exportCSV() { const filtered = getFilteredHistory(); let csv = 'Date,Member,Prayer,Status,Time\n'; filtered.forEach(r => { csv += `${r.date},${r.member},${r.prayer},${r.status},${r.time}\n`; }); const blob = new Blob([csv], { type: 'text/csv' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `askar_prayer_history_${appState.currentDate}.csv`; a.click(); }
-function importJSON(e) { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (event) => { try { const imported = JSON.parse(event.target.result); appState.records = { ...appState.records, ...imported }; saveToStorage(); renderAll(); showToast(t('messages.restored')); } catch (err) { showToast(t('messages.invalidBackup'), "danger"); } }; reader.readAsText(file); }
+function importJSON(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+        try {
+            const imported = JSON.parse(event.target.result);
+            appState.records = { ...appState.records, ...imported };
+            saveToStorage();
+            renderAll();
+            showToast(t('messages.restored'));
+            
+            // Batch import to Google Sheet if configured
+            if (appState.settings.sheetUrl) {
+                const flatRecords = convertNestedRecordsToFlat(appState.records);
+                updateSyncStatus('syncing');
+                await importRecordsToCloud(flatRecords);
+                updateSyncStatus('success');
+            }
+        } catch (err) {
+            showToast(t('messages.invalidBackup'), "danger");
+        }
+    };
+    reader.readAsText(file);
+}
+
+// --- Google Sheets Sync Helpers ---
+async function syncCloudDatabase() {
+    if (!appState.settings.sheetUrl) {
+        updateSyncStatus('disconnected');
+        return;
+    }
+    
+    updateSyncStatus('syncing');
+    try {
+        const url = new URL(appState.settings.sheetUrl);
+        url.searchParams.append('passcode', appState.settings.sheetPasscode);
+        
+        const response = await fetch(url.toString(), {
+            method: 'GET',
+            mode: 'cors',
+            cache: 'no-cache'
+        });
+        
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        
+        const result = await response.json();
+        if (result.status === 'success' && Array.isArray(result.data)) {
+            appState.records = parseRecordsFromSheet(result.data);
+            localStorage.setItem(CONFIG.storageKey, JSON.stringify(appState.records));
+            updateSyncStatus('success');
+            renderAll();
+        } else {
+            throw new Error(result.message || 'Unknown server error');
+        }
+    } catch (err) {
+        console.error("Cloud database sync failed:", err);
+        updateSyncStatus('error');
+        showToast(t('settings.syncError') || 'Error syncing with cloud database', 'danger');
+    }
+}
+
+function parseRecordsFromSheet(dataArray) {
+    const records = {};
+    if (!Array.isArray(dataArray)) return records;
+    
+    dataArray.forEach(row => {
+        const d = row.date;
+        const m = row.member;
+        const p = row.prayer;
+        
+        if (!d || !m || !p) return;
+        
+        if (!records[d]) records[d] = {};
+        if (!records[d][m]) records[d][m] = {};
+        
+        records[d][m][p] = {
+            status: row.status || 'On time',
+            time: row.markedTime || row.time || '',
+            timestamp: Number(row.timestamp) || Date.now(),
+            note: row.note || ''
+        };
+    });
+    return records;
+}
+
+function updateSyncStatus(status) {
+    const desktopStatusText = document.getElementById('desktop-sync-text');
+    const desktopSyncIcon = document.getElementById('desktop-sync-icon');
+    const desktopIndicator = document.getElementById('desktop-sync-indicator');
+    
+    const mobileSyncIcon = document.getElementById('mobile-sync-icon');
+    const mobileIndicator = document.getElementById('mobile-refresh-btn'); // Using the refresh button container
+    
+    const settingsBadge = document.getElementById('sync-status-badge');
+    
+    if (appState.settings.sheetUrl) {
+        if (desktopIndicator) desktopIndicator.style.display = 'flex';
+        if (mobileIndicator) mobileIndicator.style.display = 'flex';
+    } else {
+        if (desktopIndicator) desktopIndicator.style.display = 'none';
+        if (mobileIndicator) mobileIndicator.style.display = 'none';
+        if (settingsBadge) {
+            settingsBadge.className = 'badge';
+            settingsBadge.textContent = t('settings.statusDisconnected') || 'Disconnected';
+            settingsBadge.setAttribute('data-i18n', 'settings.statusDisconnected');
+        }
+        return;
+    }
+    
+    if (status === 'syncing') {
+        if (desktopStatusText) {
+            desktopStatusText.textContent = t('settings.statusSyncing') || 'Syncing...';
+            desktopStatusText.setAttribute('data-i18n', 'settings.statusSyncing');
+        }
+        if (desktopSyncIcon) {
+            desktopSyncIcon.className = 'fas fa-sync-alt fa-spin-custom';
+            desktopSyncIcon.style.color = 'var(--text-secondary)';
+        }
+        if (mobileSyncIcon) {
+            mobileSyncIcon.className = 'fas fa-sync-alt fa-spin-custom';
+            mobileSyncIcon.style.color = '';
+        }
+        
+        if (settingsBadge) {
+            settingsBadge.className = 'badge badge-warning';
+            settingsBadge.textContent = t('settings.statusSyncing') || 'Syncing...';
+            settingsBadge.setAttribute('data-i18n', 'settings.statusSyncing');
+        }
+    } else if (status === 'success') {
+        if (desktopStatusText) {
+            desktopStatusText.textContent = t('settings.statusConnected') || 'Connected';
+            desktopStatusText.setAttribute('data-i18n', 'settings.statusConnected');
+        }
+        if (desktopSyncIcon) {
+            desktopSyncIcon.className = 'fas fa-check-circle';
+            desktopSyncIcon.style.color = '#2e7d32'; // emerald green/success
+        }
+        if (mobileSyncIcon) {
+            mobileSyncIcon.className = 'fas fa-check-circle';
+            mobileSyncIcon.style.color = '';
+        }
+        
+        if (settingsBadge) {
+            settingsBadge.className = 'badge badge-success';
+            settingsBadge.textContent = t('settings.statusConnected') || 'Connected';
+            settingsBadge.setAttribute('data-i18n', 'settings.statusConnected');
+        }
+    } else if (status === 'error') {
+        if (desktopStatusText) {
+            desktopStatusText.textContent = t('settings.statusError') || 'Sync Error';
+            desktopStatusText.setAttribute('data-i18n', 'settings.statusError');
+        }
+        if (desktopSyncIcon) {
+            desktopSyncIcon.className = 'fas fa-exclamation-triangle';
+            desktopSyncIcon.style.color = '#d32f2f'; // danger/red
+        }
+        if (mobileSyncIcon) {
+            mobileSyncIcon.className = 'fas fa-exclamation-triangle';
+            mobileSyncIcon.style.color = '';
+        }
+        
+        if (settingsBadge) {
+            settingsBadge.className = 'badge badge-danger';
+            settingsBadge.textContent = t('settings.statusError') || 'Sync Error';
+            settingsBadge.setAttribute('data-i18n', 'settings.statusError');
+        }
+    }
+}
+
+async function saveRecordToCloud(date, member, prayer, record) {
+    if (!appState.settings.sheetUrl) return;
+    
+    const id = `${date}_${member}_${prayer}`;
+    const payload = {
+        action: "save",
+        passcode: appState.settings.sheetPasscode,
+        record: {
+            id: id,
+            date: date,
+            member: member,
+            prayer: prayer,
+            status: record.status,
+            markedTime: record.time,
+            timestamp: record.timestamp,
+            note: record.note || ""
+        }
+    };
+    
+    try {
+        const response = await fetch(appState.settings.sheetUrl, {
+            method: 'POST',
+            mode: 'cors',
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8'
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        const result = await response.json();
+        if (result.status !== 'success') {
+            throw new Error(result.message || 'Save failed');
+        }
+        console.log("Record synced to cloud successfully:", id);
+    } catch (err) {
+        console.error("Cloud save failed:", err);
+        showToast(t('settings.syncError') || 'Error syncing with cloud database', 'danger');
+    }
+}
+
+async function deleteRecordFromCloud(date, member, prayer) {
+    if (!appState.settings.sheetUrl) return;
+    
+    const id = `${date}_${member}_${prayer}`;
+    const payload = {
+        action: "delete",
+        passcode: appState.settings.sheetPasscode,
+        id: id
+    };
+    
+    try {
+        const response = await fetch(appState.settings.sheetUrl, {
+            method: 'POST',
+            mode: 'cors',
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8'
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        const result = await response.json();
+        if (result.status !== 'success') {
+            throw new Error(result.message || 'Delete failed');
+        }
+        console.log("Record deleted from cloud successfully:", id);
+    } catch (err) {
+        console.error("Cloud delete failed:", err);
+        showToast(t('settings.syncError') || 'Error syncing with cloud database', 'danger');
+    }
+}
+
+async function resetCloudDatabase() {
+    if (!appState.settings.sheetUrl) return;
+    
+    const payload = {
+        action: "reset",
+        passcode: appState.settings.sheetPasscode
+    };
+    
+    try {
+        const response = await fetch(appState.settings.sheetUrl, {
+            method: 'POST',
+            mode: 'cors',
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8'
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        const result = await response.json();
+        if (result.status !== 'success') {
+            throw new Error(result.message || 'Reset failed');
+        }
+        console.log("Cloud database reset successful");
+    } catch (err) {
+        console.error("Cloud database reset failed:", err);
+        showToast(t('settings.syncError') || 'Error syncing with cloud database', 'danger');
+    }
+}
+
+function convertNestedRecordsToFlat(recordsObj) {
+    const flat = [];
+    Object.keys(recordsObj).forEach(date => {
+        Object.keys(recordsObj[date]).forEach(member => {
+            Object.keys(recordsObj[date][member]).forEach(prayer => {
+                const record = recordsObj[date][member][prayer];
+                const id = `${date}_${member}_${prayer}`;
+                flat.push({
+                    id: id,
+                    date: date,
+                    member: member,
+                    prayer: prayer,
+                    status: record.status || "On time",
+                    markedTime: record.time || "",
+                    timestamp: record.timestamp || Date.now(),
+                    note: record.note || ""
+                });
+            });
+        });
+    });
+    return flat;
+}
+
+async function importRecordsToCloud(flatRecords) {
+    if (!appState.settings.sheetUrl) return;
+    
+    const payload = {
+        action: "import",
+        passcode: appState.settings.sheetPasscode,
+        records: flatRecords
+    };
+    
+    try {
+        const response = await fetch(appState.settings.sheetUrl, {
+            method: 'POST',
+            mode: 'cors',
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8'
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        const result = await response.json();
+        if (result.status !== 'success') {
+            throw new Error(result.message || 'Import failed');
+        }
+        console.log("Cloud database import successful, count:", result.count);
+    } catch (err) {
+        console.error("Cloud database import failed:", err);
+        showToast(t('settings.syncError') || 'Error syncing with cloud database', 'danger');
+    }
+}
