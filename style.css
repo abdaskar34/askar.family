@@ -733,36 +733,6 @@ body.dark-mode .btn-card-action:hover {
     color: var(--secondary-color);
 }
 
-/* Motivational Note Styling */
-.family-motivational-note-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    margin-top: 3rem;
-    padding: 1.5rem;
-    background: rgba(212, 175, 55, 0.05);
-    border: 1px solid rgba(212, 175, 55, 0.15);
-    border-radius: var(--radius-md);
-    max-width: 600px;
-    margin-left: auto;
-    margin-right: auto;
-}
-
-.motivational-icon {
-    font-size: 1.5rem;
-    color: var(--accent-color);
-    margin-bottom: 0.75rem;
-}
-
-.family-motivational-note {
-    font-family: 'Playfair Display', serif;
-    font-style: italic;
-    font-size: 0.95rem;
-    line-height: 1.6;
-    color: var(--text-secondary);
-}
-
 @media (max-width: 768px) {
     .members-grid {
         grid-template-columns: 1fr !important;
@@ -777,11 +747,6 @@ body.dark-mode .btn-card-action:hover {
     
     .member-card::before {
         opacity: 0.25;
-    }
-    
-    .family-motivational-note-container {
-        margin-top: 2rem;
-        padding: 1.25rem;
     }
 }
 
