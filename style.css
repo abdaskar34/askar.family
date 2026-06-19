@@ -885,3 +885,27 @@ body.page-settings .desktop-header .lang-switcher {
         justify-content: space-between !important;
     }
 }
+
+/* Honesty reminder banner in modal */
+.honesty-reminder-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: rgba(212, 175, 55, 0.08);
+    border: 1px dashed rgba(212, 175, 55, 0.4);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.25rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    direction: ltr;
+}
+html[dir="rtl"] .honesty-reminder-banner {
+    direction: rtl;
+}
+.honesty-reminder-banner i {
+    color: var(--accent-color);
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}

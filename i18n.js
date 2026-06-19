@@ -45,7 +45,8 @@ const translations = {
             undo: "Undo",
             edit: "Edit",
             done: "Done",
-            completed: "Completed"
+            completed: "Completed",
+            honestyReminder: "Honest confirmation before marking this prayer."
         },
         history: {
             title: "Prayer History",
@@ -208,7 +209,8 @@ const translations = {
             undo: "Geri Al",
             edit: "Düzenle",
             done: "Yapıldı",
-            completed: "Tamamlandı"
+            completed: "Tamamlandı",
+            honestyReminder: "Bu namazı işaretlemeden önce samimi onay."
         },
         history: {
             title: "Namaz Geçmişi",
@@ -371,7 +373,8 @@ const translations = {
             undo: "تراجع",
             edit: "تعديل",
             done: "تمت",
-            completed: "مكتملة"
+            completed: "مكتملة",
+            honestyReminder: "تأكيد صادق قبل تسجيل الصلاة."
         },
         history: {
             title: "سجل الصلوات",
